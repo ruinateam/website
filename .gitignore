@@ -1,4 +1,5 @@
 .nuxt
+.data
 .cache
 .output
 .nitro
@@ -11,3 +12,5 @@ dist
 public/api-cache
 crash_report.txt
 .output_old_*
+.codegraph/
+.playwright-mcp/
