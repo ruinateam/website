@@ -1,31 +1,66 @@
 <template>
   <Teleport to="body">
     <div class="backdrop" @click.self="$emit('close')">
-      <div class="card" :style="cardStyle">
+      <div
+        class="card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="user-card-title"
+        :style="cardStyle"
+        @keydown.tab.prevent="closeButton?.focus()"
+      >
         <header class="head">
-          <div class="user">
+          <div v-if="loading" class="user skeleton-user" aria-hidden="true">
+            <span class="skeleton skeleton-avatar"></span>
+            <div class="skeleton-copy">
+              <span class="skeleton skeleton-line skeleton-title"></span>
+              <span class="skeleton skeleton-line skeleton-id"></span>
+            </div>
+          </div>
+          <div v-else class="user">
             <img v-if="userData.logo" :src="userData.logo" alt="" />
             <div>
-              <p class="title">{{ displayName }}</p>
+              <p id="user-card-title" class="title">{{ displayName }}</p>
               <p class="muted mono">ID: {{ userData.id }}</p>
             </div>
           </div>
-          <button class="btn primary" @click="$emit('close')">Закрыть</button>
+          <button ref="closeButton" type="button" class="btn primary" @click="$emit('close')">
+            Закрыть
+          </button>
         </header>
 
-        <div class="metrics" v-if="metricItems.length">
+        <div v-if="loading" class="metrics" aria-label="Загрузка профиля" aria-busy="true">
+          <div v-for="index in 4" :key="index" class="metric skeleton-metric">
+            <span class="skeleton skeleton-line skeleton-label"></span>
+            <span class="skeleton skeleton-line skeleton-value"></span>
+          </div>
+        </div>
+
+        <div v-else-if="metricItems.length" class="metrics">
           <div v-for="item in metricItems" :key="item.label" class="metric">
             <p class="label">{{ item.label }}</p>
             <p class="value">{{ item.value }}</p>
           </div>
         </div>
 
-        <div class="metric" v-if="selectedEntry">
+        <div v-if="loading" class="metric skeleton-metric">
+          <span class="skeleton skeleton-line skeleton-label"></span>
+          <span class="skeleton skeleton-line skeleton-value"></span>
+        </div>
+
+        <div v-else-if="selectedEntry" class="metric">
           <p class="label">Сообщения / Уникальные</p>
           <p class="value">{{ selectedEntry.messages }} / {{ selectedEntry.uniqueMessages }}</p>
         </div>
 
-        <div class="tiers" v-if="selectedEntry">
+        <div v-if="loading" class="tiers">
+          <div v-for="index in 2" :key="index" class="metric score skeleton-metric">
+            <span class="skeleton skeleton-line skeleton-label"></span>
+            <span class="skeleton skeleton-line skeleton-value"></span>
+          </div>
+        </div>
+
+        <div v-else-if="selectedEntry" class="tiers">
           <!-- <TierChip label="1м" :tier="selectedEntry.tier1m" :hours="formatHours(selectedEntry.windows1m, 1)" :colors="tierColors" />
           <TierChip label="5м" :tier="selectedEntry.tier5m" :hours="formatHours(selectedEntry.windows5m, 5)" :colors="tierColors" />
           <TierChip label="15м" :tier="selectedEntry.tier15m" :hours="formatHours(selectedEntry.windows15m, 15)" :colors="tierColors" />
@@ -53,8 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import TierChip from "./TierChip.vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import type { TierEntry } from "~/types/tiers";
 import { buildScoredEntry } from "~/lib/score";
 
@@ -75,20 +109,23 @@ const props = defineProps<{
   followText: string;
   subText: string;
   roleText: string;
+  loading?: boolean;
   selectedEntry: TierEntry | null;
   selectedRank: number | null;
-  tierColors: Record<string, string>;
 }>();
 
-defineEmits<{ (e: "close"): void }>();
+const emit = defineEmits<{ (e: "close"): void }>();
+const closeButton = ref<HTMLButtonElement | null>(null);
+let previousActiveElement: HTMLElement | null = null;
+let previousBodyOverflow = "";
 
-const metricItems = [
+const metricItems = computed(() => [
   { label: "Подписчики", value: props.userData.followers ?? "-" },
   { label: "Возраст аккаунта", value: props.createdText },
   { label: "Фоллов на канал", value: props.followText },
   { label: "Подписка", value: props.subText },
   ...(props.roleText ? [{ label: "Роль", value: props.roleText }] : []),
-];
+]);
 
 const powerPoints = computed(() => {
   if (!props.selectedEntry) return "-";
@@ -97,14 +134,28 @@ const powerPoints = computed(() => {
   return scored.scoreRounded;
 });
 
-const formatHours = (count: number, minutes: number) => {
-  const hours = (count * minutes) / 60;
-  return `${hours.toFixed(1)}h`;
-};
-
 const cardStyle = computed(() => ({
   "--card-avatar-bg": props.userData.logo ? `url("${props.userData.logo}")` : "none",
 }));
+
+const onKey = (event: KeyboardEvent) => {
+  if (event.key === "Escape") emit("close");
+};
+
+onMounted(() => {
+  previousActiveElement =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  previousBodyOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  window.addEventListener("keydown", onKey);
+  nextTick(() => closeButton.value?.focus());
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKey);
+  document.body.style.overflow = previousBodyOverflow;
+  previousActiveElement?.focus();
+});
 </script>
 
 <style scoped>
@@ -195,6 +246,71 @@ const cardStyle = computed(() => ({
   box-shadow:
     0 10px 24px rgba(0, 0, 0, 0.52),
     0 0 0 3px rgba(255, 255, 255, 0.06);
+}
+
+.skeleton-user {
+  min-width: 0;
+}
+
+.skeleton-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.skeleton {
+  display: block;
+  overflow: hidden;
+  position: relative;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+.skeleton-avatar {
+  width: clamp(40px, 10vw, 48px);
+  height: clamp(40px, 10vw, 48px);
+  border-radius: 12px;
+}
+
+.skeleton-line {
+  height: 0.85em;
+}
+
+.skeleton-title {
+  width: clamp(110px, 24vw, 160px);
+  height: 1em;
+}
+
+.skeleton-id {
+  width: 86px;
+}
+
+.skeleton-label {
+  width: 68%;
+}
+
+.skeleton-value {
+  width: 44%;
+  height: 1.1em;
+}
+
+.skeleton-metric {
+  min-height: 72px;
+  justify-content: center;
+}
+
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .title {

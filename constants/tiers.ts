@@ -45,9 +45,9 @@ export const normalizeColor = (c?: string) => {
 export const tierTextColor = (hex: string) => {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(normalizeColor(hex));
   if (!m) return "#0a0a0a";
-  const r = parseInt(m[1], 16) / 255;
-  const g = parseInt(m[2], 16) / 255;
-  const b = parseInt(m[3], 16) / 255;
+  const r = parseInt(m[1]!, 16) / 255;
+  const g = parseInt(m[2]!, 16) / 255;
+  const b = parseInt(m[3]!, 16) / 255;
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   return lum > 0.6 ? "#0a0a0a" : "#f8fafc";
 };

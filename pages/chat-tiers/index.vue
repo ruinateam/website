@@ -55,6 +55,7 @@ const profiles = reactive<Record<string, { displayName: string; login: string; l
   {},
 );
 const relations = reactive<Record<string, Relation>>({});
+const relationRequests = new Map<string, Promise<Relation>>();
 const userLookup = ref("");
 const userData = ref<IvrUser | null>(null);
 const userLoading = ref(false);
@@ -89,18 +90,32 @@ const fetchProfiles = async (ids: string[]) => {
 const fetchRelations = async (ids: string[]) => {
   if (!ids.length) return;
   const channelLogin = channel.value.trim();
-  const top = ids.slice(0, 30);
-  for (const id of top) {
-    const prof = profiles[id];
-    if (!prof || relations[id]) continue;
-    relations[id] = await fetchIvrSubage(prof.login, channelLogin);
-  }
+  const pending = ids.slice(0, 30).filter((id) => profiles[id] && !relations[id]);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (nextIndex < pending.length) {
+      const id = pending[nextIndex++]!;
+      const profile = profiles[id]!;
+      const requestKey = `${channelLogin}:${id}`;
+      let request = relationRequests.get(requestKey);
+      if (!request) {
+        request = fetchIvrSubage(profile.login, channelLogin).finally(() => {
+          relationRequests.delete(requestKey);
+        });
+        relationRequests.set(requestKey, request);
+      }
+
+      const relation = await request;
+      if (channelLogin === channel.value.trim()) relations[id] = relation;
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(5, pending.length) }, worker));
 };
 
 const lookupUserRemotely = async (termOverride?: string) => {
   userError.value = null;
-  userData.value = null;
-  showProfile.value = false;
   const term = (termOverride ?? userLookup.value).trim();
   if (!term) return;
   userLoading.value = true;
@@ -109,7 +124,6 @@ const lookupUserRemotely = async (termOverride?: string) => {
     userData.value = found;
     if (!found) {
       userError.value = "Not found";
-      showProfile.value = false;
     } else {
       showProfile.value = true;
       const foundId = found.id;
@@ -132,7 +146,6 @@ const lookupUserRemotely = async (termOverride?: string) => {
         ? String((e as { message?: unknown }).message)
         : "Request failed";
     userError.value = msg;
-    showProfile.value = false;
   } finally {
     userLoading.value = false;
   }
@@ -140,7 +153,7 @@ const lookupUserRemotely = async (termOverride?: string) => {
 
 const filteredEntries = computed(() => {
   const query = normalizeSearch(activeSearch.value);
-  if (!query || !rankedEntries.value.length) return [];
+  if (!query || !rankedEntries.value.length) return [] as TierEntry[];
 
   return rankedEntries.value
     .map((entry) => {
@@ -148,19 +161,19 @@ const filteredEntries = computed(() => {
       const displayName = normalizeSearch(profile?.displayName || entry.userLogin || entry.userId);
       const login = normalizeSearch(profile?.login || entry.userLogin || "");
       const userId = normalizeSearch(entry.userId);
-      return Math.max(
+      const score = Math.max(
         fuzzyScore(query, userId) + (userId === query ? 900 : 0),
         fuzzyScore(query, login),
         fuzzyScore(query, displayName),
       );
+      return { score, entry };
     })
-    .map((score, idx) => ({ score, entry: rankedEntries.value[idx] }))
     .filter((item) => item.score >= 0)
     .map((item) => item.entry);
 });
 
-const displayedEntries = computed(() =>
-  activeSearch.value.trim() ? filteredEntries.value : data.value?.entries || [],
+const displayedEntries = computed((): TierEntry[] =>
+  activeSearch.value.trim() ? filteredEntries.value : data.value?.entries ?? [],
 );
 
 const {
@@ -189,6 +202,7 @@ const openProfile = async (userId: string) => {
       displayName: prof?.displayName || entry.userLogin || userId,
       logo: prof?.logo,
     };
+    userLoading.value = true;
     showProfile.value = true;
   }
   const rel = relations[userId];
@@ -206,11 +220,9 @@ const hasAttemptedLoad = ref(false);
 const latestMonthlySelection = computed(() => {
   for (const y of availableYearsMap.value.month) {
     const monthsForYear = availableMonthsMap.value[y] || [];
-    if (monthsForYear.length) {
-      return {
-        year: y,
-        month: monthsForYear[monthsForYear.length - 1],
-      };
+    const month = monthsForYear[monthsForYear.length - 1];
+    if (month !== undefined) {
+      return { year: y, month };
     }
   }
   return null;
@@ -280,8 +292,9 @@ const syncQuery = (reason: string) => {
 
 const alignToAvailable = (preferLatestMonth = false) => {
   let yearWasAdjusted = false;
-  if (availableYears.value.length && !availableYears.value.includes(year.value)) {
-    year.value = availableYears.value[0];
+  const firstYear = availableYears.value[0];
+  if (firstYear !== undefined && !availableYears.value.includes(year.value)) {
+    year.value = firstYear;
     yearWasAdjusted = true;
   }
 
@@ -295,15 +308,17 @@ const alignToAvailable = (preferLatestMonth = false) => {
     month.value = latestMonthlySelection.value.month;
   } else if (scope.value === "month") {
     const monthsForYear = availableMonths.value;
+    const lastMonth = monthsForYear[monthsForYear.length - 1];
     if (!monthsForYear.length) {
       scope.value = "year";
-    } else if (yearWasAdjusted || !monthsForYear.includes(month.value)) {
-      month.value = monthsForYear[monthsForYear.length - 1];
+    } else if (lastMonth !== undefined && (yearWasAdjusted || !monthsForYear.includes(month.value))) {
+      month.value = lastMonth;
     }
   }
 
-  if (availableModes.value.length && !availableModes.value.includes(mode.value)) {
-    mode.value = availableModes.value[0];
+  const firstMode = availableModes.value[0];
+  if (firstMode !== undefined && !availableModes.value.includes(mode.value)) {
+    mode.value = firstMode;
   }
 };
 
@@ -326,10 +341,11 @@ const loadAvailable = async (preferLatestMonth = false, preserveSelection = fals
       debugState("loadAvailable:preserved", { preferLatestMonth, preserveSelection });
       return;
     }
-    if (availableScopes.value.length === 1) {
-      scope.value = availableScopes.value[0];
+    const firstScope = availableScopes.value[0];
+    if (availableScopes.value.length === 1 && firstScope !== undefined) {
+      scope.value = firstScope;
     } else if (!availableScopes.value.includes(scope.value)) {
-      scope.value = availableScopes.value[0] || "year";
+      scope.value = firstScope ?? "year";
     }
     alignToAvailable(preferLatestMonth);
     debugState("loadAvailable:aligned", { preferLatestMonth, preserveSelection });
@@ -489,6 +505,7 @@ watch(
   async () => {
     if (isInitializing.value) return;
     debugState("watch:channel");
+    for (const id of Object.keys(relations)) delete relations[id];
     await loadAvailable(true);
     syncQuery("watch:channel");
   },
@@ -601,7 +618,11 @@ const errorText = computed(() => {
           >: online / offline / all
         </p>
       </div>
-      <button class="btn primary refresh-btn" @click="reload" :disabled="pending || !canReload">
+      <button
+        class="btn primary refresh-btn"
+        :disabled="pending || !canReload"
+        @click="reload()"
+      >
         {{ pending ? "Загрузка..." : "Загрузить статистику" }}
       </button>
     </header>
@@ -693,6 +714,7 @@ const errorText = computed(() => {
   <UserCard
     v-if="showProfile && userData"
     :user-data="userData"
+    :loading="userLoading"
     :display-name="displayNameLine"
     :created-text="humanizeFromDate(userData.createdAt)"
     :follow-text="humanizeFromDate(relations[userData.id]?.followedAt)"
@@ -702,7 +724,6 @@ const errorText = computed(() => {
     "
     :selected-entry="selectedEntry"
     :selected-rank="selectedRank"
-    :tier-colors="tierColors"
     @close="showProfile = false"
   />
 </template>
