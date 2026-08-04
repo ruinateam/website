@@ -1,9 +1,8 @@
 <script setup lang="ts">
 const { data: guidesRaw } = await useAsyncData("guides-list", () =>
-  queryContent("/guides")
-    .where({ _extension: "md" })
-    .only([
-      "_path",
+  queryCollection("guides")
+    .select(
+      "path",
       "title",
       "author",
       "description",
@@ -11,9 +10,9 @@ const { data: guidesRaw } = await useAsyncData("guides-list", () =>
       "created_at",
       "updated_at",
       "tags",
-    ])
-    .sort({ created_at: -1 })
-    .find(),
+    )
+    .order("created_at", "DESC")
+    .all(),
 );
 
 const formatDate = (value?: string | number | Date | null) => {
@@ -25,7 +24,7 @@ const formatDate = (value?: string | number | Date | null) => {
 
 const cards = computed(() =>
   (guidesRaw.value || []).map((item, idx) => ({
-    path: item._path,
+    path: item.path,
     title: item.title || `Гайд #${idx + 1}`,
     author: item.author || "Автор",
     description:

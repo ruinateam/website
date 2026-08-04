@@ -9,18 +9,17 @@ const path = computed(() => `/guides/${slugParam.value}`);
 
 const { data: guide } = await useAsyncData(
   () => `guide-${path.value}`,
-  () => queryContent(path.value).findOne(),
+  () => queryCollection("guides").path(path.value).first(),
 );
 
 const { data: allGuides } = await useAsyncData("guide-nav", () =>
-  queryContent("/guides")
-    .where({ _extension: "md" })
-    .only(["_path", "title", "created_at", "updated_at"])
-    .sort({ created_at: -1 })
-    .find(),
+  queryCollection("guides")
+    .select("path", "title", "created_at", "updated_at")
+    .order("created_at", "DESC")
+    .all(),
 );
 
-const idx = computed(() => allGuides.value?.findIndex((g) => g._path === guide.value?._path) ?? -1);
+const idx = computed(() => allGuides.value?.findIndex((g) => g.path === guide.value?.path) ?? -1);
 
 const prevLink = computed(() => {
   if (!allGuides.value || idx.value < 0) return null;
@@ -68,7 +67,7 @@ const isMobileShare = () => {
 const handleArticleAction = async () => {
   if (typeof window === "undefined") return;
 
-  const url = window.location.href.split("#")[0];
+  const url = window.location.href.split("#")[0] ?? window.location.href;
 
   if (isMobileShare()) {
     try {
@@ -163,7 +162,7 @@ onMounted(() => {
 });
 
 watch(
-  () => guide.value?._path,
+  () => guide.value?.path,
   () => nextTick(refreshBody),
 );
 </script>
@@ -194,7 +193,7 @@ watch(
           </div>
           <div>
             <span class="label">Путь</span>
-            <span class="value mono">{{ guide._path }}</span>
+            <span class="value mono">{{ guide.path }}</span>
           </div>
         </div>
 
@@ -207,7 +206,9 @@ watch(
             @click="handleArticleAction"
           >
             <span class="copy-link-label copy-link-label--desktop">
-              <span class="material-symbols-outlined">{{ articleLinkCopied ? "check" : "link_2" }}</span>
+              <span class="material-symbols-outlined">{{
+                articleLinkCopied ? "check" : "link_2"
+              }}</span>
             </span>
             <span class="copy-link-label copy-link-label--mobile" aria-hidden="true">
               <span class="material-symbols-outlined">ios_share</span>
@@ -217,7 +218,7 @@ watch(
           <div class="hero-tags" v-if="guide.tags?.length">
             <span
               v-for="(tag, tagIdx) in guide.tags"
-              :key="`${guide._path}-tag-${tag}-${tagIdx}`"
+              :key="`${guide.path}-tag-${tag}-${tagIdx}`"
               class="tag-pill"
               :class="tagColor(tagIdx)"
             >
@@ -247,11 +248,11 @@ watch(
     </ClientOnly>
 
     <footer class="guide-nav" v-if="prevLink || nextLink">
-      <NuxtLink v-if="prevLink" :to="prevLink._path" class="btn ghost"
+      <NuxtLink v-if="prevLink" :to="prevLink.path" class="btn ghost"
         >← {{ prevLink.title }}</NuxtLink
       >
       <div class="spacer" />
-      <NuxtLink v-if="nextLink" :to="nextLink._path" class="btn primary"
+      <NuxtLink v-if="nextLink" :to="nextLink.path" class="btn primary"
         >{{ nextLink.title }} →</NuxtLink
       >
     </footer>
