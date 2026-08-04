@@ -19,18 +19,23 @@
         <div class="home-footer-links">
           <a
             class="home-footer-link"
-            href="https://github.com/Linaryx/ruina.team"
+            href="https://github.com/ruinateam/website"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="GitHub"
             title="GitHub"
           >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.42-4.04-1.42-.54-1.38-1.33-1.75-1.33-1.75-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.08 1.84 2.82 1.31 3.5 1 .11-.78.42-1.31.77-1.61-2.66-.3-5.47-1.33-5.47-5.9 0-1.3.46-2.36 1.23-3.19-.13-.3-.53-1.52.11-3.17 0 0 1-.32 3.3 1.22a11.4 11.4 0 0 1 6 0c2.29-1.54 3.29-1.22 3.29-1.22.65 1.65.24 2.87.12 3.17.76.83 1.22 1.89 1.22 3.19 0 4.58-2.81 5.6-5.49 5.9.43.37.82 1.1.82 2.22v3.29c0 .32.21.7.83.58A12 12 0 0 0 12 .5Z"
-              />
-            </svg>
+            <SocialIcon name="github" />
+          </a>
+          <a
+            class="home-footer-link"
+            href="https://www.twitch.tv/linaryx"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Twitch"
+            title="Twitch"
+          >
+            <SocialIcon name="twitch" />
           </a>
           <a
             class="home-footer-link"
@@ -40,12 +45,7 @@
             aria-label="Telegram"
             title="Telegram"
           >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M21.94 4.66a1.5 1.5 0 0 0-1.67-.24L2.96 11.8a1.5 1.5 0 0 0 .16 2.8l4.25 1.42 1.58 5.06a1.5 1.5 0 0 0 2.59.56l2.38-2.91 4.67 3.42a1.5 1.5 0 0 0 2.36-.88l2.96-15.1a1.5 1.5 0 0 0-.57-1.51Zm-3.52 4.03-7.57 6.91a.75.75 0 0 0-.22.38l-.63 2.9-.88-2.82 8.79-8.03a.75.75 0 1 0-1.01-1.1l-10.15 9.27-3.16-1.06 15.65-6.45-2.16 10.99-4.12-3.02a1.5 1.5 0 0 0-1.99.2l-1.13 1.38.39-1.8 7.21-6.58a.75.75 0 1 0-1.01-1.1Z"
-              />
-            </svg>
+            <SocialIcon name="telegram" />
           </a>
         </div>
       </div>
@@ -112,10 +112,10 @@ watch(
   --hero-pad-top: clamp(104px, 12vh, 144px);
   --hero-pad-bottom: 24px;
   position: relative;
-  display: block;
-  margin-bottom: 0;
-  min-height: 100vh;
-  min-height: 100dvh;
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
   padding: var(--hero-pad-top) clamp(20px, 5vw, 56px) var(--hero-pad-bottom);
   overflow: hidden;
   background: url("/bg.webp") center / cover no-repeat;
@@ -159,10 +159,10 @@ watch(
   position: relative;
   z-index: 1;
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - var(--hero-pad-top) - var(--hero-pad-bottom));
-  min-height: calc(100dvh - var(--hero-pad-top) - var(--hero-pad-bottom));
+  min-height: 0;
 }
 
 .hero-wordmark {
