@@ -6,23 +6,66 @@ import {
   events,
   projectById,
   laneById,
-  geometry,
-  point,
   mediaLabels,
   confidenceLabels,
   officialTimeline,
   primarySources,
 } from "~/lib/marvel-timeline";
 import type { Project, MediaType, Connection, Lane } from "~/lib/marvel-timeline";
+import {
+  detailLevelFor,
+  laneProjects,
+  medallionDisc,
+  timelineAnchor,
+  timelineCanvas,
+  timelineCaptionSide,
+  timelineChapters,
+  timelineConnectionPath,
+  timelineDiscCenter,
+  timelineFutureOffsets,
+  timelineFuturePath,
+  timelineGeometry,
+  timelineLaneBounds,
+  timelineLaneY,
+  timelineRowBand,
+  timelineStrandOffsets,
+  timelineStrandPath,
+  timelineX,
+  treeBranchSpine,
+  treeConnectionPath,
+  treeCrownLabelPoint,
+  treeCrownPaths,
+  treeDiscCenter,
+  treeGeometry,
+  treeLaneLabelPoint,
+  treeLaneSide,
+  treeOrbitPath,
+  treeRootLabelPoint,
+  treeRootPaths,
+  treeTrunkAnchor,
+  treeTrunkSpine,
+  treeY,
+} from "~/lib/marvel-timeline-layout";
+import type {
+  CanvasView,
+  DetailLevel,
+  LayoutPoint,
+  TimelineChapter,
+} from "~/lib/marvel-timeline-layout";
+import ProjectMedallion from "~/components/timelines/ProjectMedallion.vue";
 
 useSeoMeta({
   title: "Marvel: ветви времени TVA — Ruina.team",
   description:
     "Интерактивное древо времени Marvel в эстетике TVA: основная линия MCU, параллельные реальности, сюжетные связи и источники.",
 });
+
+type ViewMode = CanvasView | "list";
+type ConnectionVisibility = "focus" | "all" | "hidden";
+
 const format = ref<MediaType | "all">("all");
 const query = ref("");
-const view = ref<"map" | "list">("map");
+const view = ref<ViewMode>("timeline");
 const branches = ref(true);
 const spoilers = ref(false);
 const selectedId = ref<string | null>(null);
@@ -30,28 +73,40 @@ const selected = computed(() => (selectedId.value ? projectById.get(selectedId.v
 const selectedLane = computed(() =>
   selected.value ? laneById.get(selected.value.lane) : undefined,
 );
-const selectedConnections = computed(() =>
-  connections.filter(
-    (link) =>
-      !isBackboneLink(link) &&
-      (link.source === selectedId.value || link.target === selectedId.value),
-  ),
-);
-const selectedEvents = computed(() =>
-  events.filter(
-    (event) =>
-      event.project === selectedId.value ||
-      selectedConnections.value.some((link) => link.event === event.id),
-  ),
-);
 const dialog = ref<HTMLDialogElement | null>(null);
 let dialogTrigger: HTMLElement | null = null;
 const viewport = ref<HTMLElement | null>(null);
-const initialZoom = 0.8;
-const zoom = ref(initialZoom);
-const scroll = reactive({ x: 0, y: 0, width: 1000, height: 620 });
-const activeLane = ref("mcu");
 const failedPosters = ref(new Set<string>());
+const highlighted = ref<string | null>(null);
+const expandedLane = ref<string | null>(null);
+const activeLane = ref("mcu");
+const connectionVisibility = ref<ConnectionVisibility>("focus");
+const focusId = ref<string | null>(null);
+const scroll = reactive({ x: 0, y: 0, width: 1000, height: 640 });
+const zoomLimits = { min: 0.05, max: 1.2, factor: 1.25 };
+/** Air around the canvas so the map can be dragged freely at any zoom. */
+const canvasPad = { x: 640, y: 440 };
+const camera = reactive({
+  timeline: { zoom: 0.85, x: 0, y: 0, touched: false },
+  tree: { zoom: 0.82, x: 0, y: 0, touched: false },
+});
+const drag = reactive({
+  active: false,
+  moved: false,
+  startX: 0,
+  startY: 0,
+  scrollX: 0,
+  scrollY: 0,
+  pointerId: -1,
+});
+
+const canvasView = computed<CanvasView>(() => (view.value === "tree" ? "tree" : "timeline"));
+const cameraState = computed(() => camera[canvasView.value]);
+const zoom = computed(() => cameraState.value.zoom);
+const detail = computed<DetailLevel>(() => detailLevelFor(zoom.value));
+const canvas = computed(() => (view.value === "tree" ? treeGeometry : timelineCanvas));
+const treeStrandOffsets = [-14, 0, 14];
+
 const normalizedQuery = computed(() =>
   query.value.toLocaleLowerCase("ru").replaceAll("ё", "е").trim(),
 );
@@ -73,7 +128,7 @@ const shownLanes = computed(() =>
 );
 const isBackboneLink = (link: Connection) =>
   link.relation === "precedes" && link.id.startsWith("order-");
-const shownConnections = computed(() =>
+const visibleLinks = computed(() =>
   connections.filter(
     (link) =>
       filteredIds.value.has(link.source) &&
@@ -81,12 +136,12 @@ const shownConnections = computed(() =>
       !isBackboneLink(link),
   ),
 );
-const connectedIds = computed(
-  () =>
-    new Set(shownConnections.value.flatMap((connection) => [connection.source, connection.target])),
+const shownConnections = computed(() =>
+  connectionVisibility.value === "hidden" ? [] : visibleLinks.value,
 );
-const highlighted = ref<string | null>(null);
-const expandedLane = ref<string | null>(null);
+const connectedIds = computed(
+  () => new Set(visibleLinks.value.flatMap((link) => [link.source, link.target])),
+);
 const relatedIds = computed(
   () =>
     new Set(
@@ -99,6 +154,7 @@ const relatedIds = computed(
         .flatMap((link) => [link.source, link.target]),
     ),
 );
+const focusActive = computed(() => highlighted.value !== null || expandedLane.value !== null);
 const formats: { id: MediaType | "all"; label: string }[] = [
   { id: "all", label: "Все проекты" },
   { id: "film", label: "Фильмы" },
@@ -114,100 +170,28 @@ const relationLabels: Record<Connection["relation"], string> = {
   connected_via: "Связано событием",
   branch_of: "Ответвление линии",
 };
-const chapters = [
-  { id: "first-avenger", title: "Начало", years: "1943–2011" },
-  { id: "avengers", title: "Сбор Мстителей", years: "2012–2015" },
-  { id: "civil-war", title: "Раскол", years: "2016–2017" },
-  { id: "infinity-war", title: "Бесконечность", years: "2018–2023" },
-  { id: "no-way-home", title: "Мультивселенная", years: "После «Финала»" },
-];
-const chapterIndex = computed(() => {
-  const centerSlot =
-    ((scroll.x + scroll.width / 2) / zoom.value - geometry.padding) / geometry.step;
-  return Math.max(
-    0,
-    chapters.findLastIndex((chapter) => projectById.get(chapter.id)!.slot <= centerSlot + 0.01),
-  );
-});
-const drag = reactive({
-  active: false,
-  moved: false,
-  startX: 0,
-  startY: 0,
-  scrollX: 0,
-  scrollY: 0,
-  pointerId: -1,
-});
-let resizeObserver: ResizeObserver | undefined;
-let savedMapPosition = { x: 0, y: 0 };
-let zoomFrame: number | undefined;
-let pendingZoomScroll: { x: number; y: number } | undefined;
-
-const zoomLimits = { min: 0.45, max: 1.2, step: 0.1 };
-const mainStrandOffsets = [-24, -18, -12, -6, 0, 6, 12, 18, 24];
-const connectionFiberOffsets = [-5, 0, 5];
-const futureBranchOffsets = [-190, -126, -70, -26, 34, 96, 168];
 const laneKindLabels: Record<Lane["kind"], string> = {
   main: "Ствол",
   story: "История Земли-616",
   alternate: "Другая реальность",
   "outside-time": "Вне времени",
 };
-const laneProjectsById = new Map(
-  lanes.map((lane) => [
-    lane.id,
-    projects.filter((project) => project.lane === lane.id).sort((a, b) => a.slot - b.slot),
-  ]),
-);
-const laneBoundsById = new Map(
-  lanes.map((lane) => {
-    const nodes = laneProjectsById.get(lane.id)!;
-    return [
-      lane.id,
-      { start: point(nodes[0]!).x - 92, end: point(nodes[nodes.length - 1]!).x + 108 },
-    ];
-  }),
-);
-const nodeSizes = {
-  compact: { width: 184, height: 122 },
-  standard: { width: 208, height: 140 },
-  wide: { width: 232, height: 158 },
-} as const;
-function nodeSize(project: Project) {
-  if (project.media === "special") return nodeSizes.compact;
-  return project.major ? nodeSizes.wide : nodeSizes.standard;
-}
-function expandLane(id: string) {
-  if (drag.active) return;
-  expandedLane.value = id;
-}
-function collapseLane() {
-  expandedLane.value = null;
-}
-function isLaneLink(link: Connection) {
-  if (!expandedLane.value) return false;
-  return (
-    projectById.get(link.source)?.lane === expandedLane.value ||
-    projectById.get(link.target)?.lane === expandedLane.value
-  );
-}
-const laneZones = computed(() => {
-  const sorted = [...shownLanes.value].sort((a, b) => a.y - b.y);
-  return sorted.map((lane, index) => {
-    const bounds = laneBoundsById.get(lane.id)!;
-    const previous = sorted[index - 1];
-    const next = sorted[index + 1];
-    const top = previous ? (previous.y + lane.y) / 2 : lane.y - 210;
-    const bottom = next ? (lane.y + next.y) / 2 : lane.y + 64;
-    return {
-      id: lane.id,
-      left: bounds.start,
-      width: Math.max(0, bounds.end - bounds.start),
-      top,
-      height: Math.max(0, bottom - top),
-    };
-  });
+const chapterIndex = computed(() => {
+  const centerX = (scroll.x + scroll.width / 2 - canvasPad.x) / zoom.value;
+  const passed = timelineChapters.filter((chapter) => timelineX(chapter.slot) <= centerX + 0.01);
+  return Math.max(0, passed.length - 1);
 });
+const headingNote = computed(() => {
+  if (view.value === "tree") return "Снизу вверх: от корней к кроне";
+  return activeLane.value === "mcu" ? "Сюжетная хронология" : laneById.get(activeLane.value)?.order;
+});
+const canvasLabel = computed(() => {
+  if (view.value === "tree")
+    return "Древо мультивселенной: время идёт снизу вверх, от корней Земли-616 к кроне реальностей. Стрелки перемещают вид, Home возвращает к корням, Ctrl и колесо изменяют масштаб.";
+  return "Таймлайн Marvel. Стрелки перемещают карту, Home возвращает к началу, Ctrl и колесо изменяют масштаб. Можно переключиться на список.";
+});
+const treeRootCurves = treeRootPaths();
+const treeCrownBranches = treeCrownPaths();
 const sourceDateFormat = new Intl.DateTimeFormat("ru-RU", {
   day: "numeric",
   month: "long",
@@ -220,54 +204,101 @@ const verifiedLabel = computed(() => {
     : "в сентябре 2026 года";
 });
 
-function strandPath(start: number, end: number, y: number, offset: number, index: number) {
-  const span = end - start;
-  const direction = index % 2 === 0 ? 1 : -1;
-  const baseline = y + offset;
-  const wave = (8 + (index % 4) * 2.5) * direction;
+/* ------------------------------ node geometry ------------------------------ */
 
-  return `M ${start} ${baseline}
-    C ${start + span * 0.1} ${baseline + wave}, ${start + span * 0.16} ${baseline - wave}, ${start + span * 0.27} ${baseline}
-    S ${start + span * 0.43} ${baseline + wave}, ${start + span * 0.54} ${baseline}
-    S ${start + span * 0.71} ${baseline - wave}, ${start + span * 0.8} ${baseline}
-    S ${start + span * 0.93} ${baseline + wave}, ${end} ${baseline}`;
+function nodeCenter(project: Project): LayoutPoint {
+  return view.value === "tree"
+    ? treeDiscCenter(project)
+    : timelineDiscCenter(project, detail.value);
 }
-
-function connectionBranchPath(connection: Connection, offset: number, index: number) {
-  const from = point(projectById.get(connection.source)!);
-  const to = point(projectById.get(connection.target)!);
-  const distance = to.x - from.x;
-  const middle = from.x + distance * 0.5;
-
-  if (from.y === to.y) {
-    const direction = connection.id.length % 2 === 0 ? 1 : -1;
-    const crown = direction * (54 + index * 7 + offset * 2);
-    return `M ${from.x} ${from.y}
-      C ${from.x + distance * 0.28} ${from.y + crown},
-        ${to.x - distance * 0.28} ${to.y + crown},
-        ${to.x} ${to.y}`;
-  }
-
-  return `M ${from.x} ${from.y}
-    C ${middle} ${from.y + offset * 3},
-      ${middle} ${to.y + offset * 3},
-      ${to.x} ${to.y}`;
+function nodeSide(project: Project) {
+  return view.value === "tree" ? "below" : timelineCaptionSide(project);
 }
-
-function futureBranchPath(offset: number, index: number) {
-  const start = geometry.width - 820;
-  const end = geometry.width - 54;
-  const direction = Math.sign(offset) || (index % 2 === 0 ? 1 : -1);
-
-  return `M ${start} ${geometry.mainY + (index - 3) * 4}
-    C ${start + 270} ${geometry.mainY + direction * 18},
-      ${end - 310} ${geometry.mainY + offset * 0.76},
-      ${end} ${geometry.mainY + offset}`;
+function nodeStyle(project: Project) {
+  const center = nodeCenter(project);
+  const disc = medallionDisc(project, detail.value);
+  return {
+    left: `${center.x - disc / 2}px`,
+    top: `${center.y - disc / 2}px`,
+    "--lane-color": laneById.get(project.lane)!.color,
+  };
 }
-
+function nodeClasses(project: Project) {
+  return {
+    "is-related": relatedIds.value.has(project.id),
+    "is-highlighted": highlighted.value === project.id,
+    "is-muted": isMuted(project),
+  };
+}
+function isMuted(project: Project) {
+  if (highlighted.value)
+    return project.id !== highlighted.value && !relatedIds.value.has(project.id);
+  if (expandedLane.value) return project.lane !== expandedLane.value;
+  return false;
+}
+function isLinkActive(link: Connection) {
+  if (highlighted.value)
+    return link.source === highlighted.value || link.target === highlighted.value;
+  if (expandedLane.value)
+    return (
+      projectById.get(link.source)?.lane === expandedLane.value ||
+      projectById.get(link.target)?.lane === expandedLane.value
+    );
+  return false;
+}
+function linkColor(link: Connection) {
+  return laneById.get(projectById.get(link.source)!.lane)!.color;
+}
 function laneProjectCount(id: string) {
-  return laneProjectsById.get(id)!.length;
+  return laneProjects(id).length;
 }
+function laneBounds(id: string) {
+  return timelineLaneBounds(id);
+}
+function chapterX(chapter: TimelineChapter) {
+  return Math.max(12, timelineX(chapter.slot) - timelineGeometry.step / 2 - 10);
+}
+function laneLabelStyle(lane: Lane) {
+  return {
+    left: `${laneBounds(lane.id).start - 8}px`,
+    top: `${timelineLaneY(lane.id) + 16}px`,
+    "--lane-color": lane.color,
+  };
+}function treeLabelStyle(lane: Lane) {
+  const point = treeLaneLabelPoint(lane.id);
+  return {
+    left: `${point.x}px`,
+    top: `${point.y}px`,
+    "--lane-color": lane.color,
+  };
+}
+function markerStyle(point: LayoutPoint) {
+  return { left: `${point.x}px`, top: `${point.y}px` };
+}
+const laneZones = computed(() => {
+  const sorted = [...shownLanes.value].sort((a, b) => timelineLaneY(a.id) - timelineLaneY(b.id));
+  return sorted.map((lane) => {
+    const bounds = timelineLaneBounds(lane.id);
+    const band = timelineRowBand(lane.id);
+    return {
+      id: lane.id,
+      color: lane.color,
+      left: bounds.start,
+      width: Math.max(0, bounds.end - bounds.start),
+      top: band.top,
+      height: Math.max(0, band.bottom - band.top),
+    };
+  });
+});
+const laneLabels = computed(() => shownLanes.value.filter((lane) => lane.kind !== "main"));
+const treeBranchLanes = computed(() => shownLanes.value.filter((lane) => lane.id !== "mcu"));
+const canvasClasses = computed(() => ({
+  "map-canvas--tree": view.value === "tree",
+  "map-canvas--focusing": focusActive.value,
+  "map-canvas--links-all": connectionVisibility.value === "all",
+}));
+
+/* ------------------------------- navigation ------------------------------- */
 
 function syncScroll() {
   if (!viewport.value) return;
@@ -276,10 +307,19 @@ function syncScroll() {
   scroll.width = viewport.value.clientWidth;
   scroll.height = viewport.value.clientHeight;
 }
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+function canvasFromScroll(x: number, y: number) {
+  return {
+    x: (x - canvasPad.x) / zoom.value,
+    y: (y - canvasPad.y) / zoom.value,
+  };
+}
 function moveTo(x: number, y: number, smooth = true) {
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const left = Math.max(0, x * zoom.value - scroll.width / 2);
-  const top = Math.max(0, y * zoom.value - scroll.height / 2);
+  const reduced = prefersReducedMotion();
+  const left = Math.max(0, x * zoom.value + canvasPad.x - scroll.width / 2);
+  const top = Math.max(0, y * zoom.value + canvasPad.y - scroll.height / 2);
   const nearby = Math.hypot(left - scroll.x, top - scroll.y) < scroll.width;
   viewport.value?.scrollTo({
     left,
@@ -287,37 +327,29 @@ function moveTo(x: number, y: number, smooth = true) {
     behavior: smooth && nearby && !reduced ? "smooth" : "instant",
   });
 }
-function goToProject(id: string) {
-  const project = projectById.get(id);
-  if (!project) return;
-  if (project.lane !== "mcu") branches.value = true;
-  format.value = "all";
-  query.value = "";
-  nextTick(() => {
-    activeLane.value = project.lane;
-    if (view.value === "list") {
-      document
-        .getElementById(`list-${id}`)
-        ?.scrollIntoView({ block: "center", behavior: "instant" });
-    } else moveTo(point(project).x, point(project).y);
+function ensureVisible(point: LayoutPoint) {
+  const element = viewport.value;
+  if (!element) return;
+  const margin = 150;
+  const x = point.x * zoom.value + canvasPad.x;
+  const y = point.y * zoom.value + canvasPad.y;
+  let left = scroll.x;
+  let top = scroll.y;
+  if (x - left < margin) left = x - margin;
+  if (x - left > scroll.width - margin) left = x - scroll.width + margin;
+  if (y - top < margin) top = y - margin;
+  if (y - top > scroll.height - margin) top = y - scroll.height + margin;
+  left = Math.max(0, left);
+  top = Math.max(0, top);
+  if (Math.abs(left - scroll.x) < 1 && Math.abs(top - scroll.y) < 1) return;
+  element.scrollTo({
+    left,
+    top,
+    behavior: prefersReducedMotion() ? "instant" : "smooth",
   });
 }
-async function goToUniverse(id: string) {
-  const nodes = laneProjectsById.get(id);
-  const project = nodes?.[Math.floor(nodes.length / 2)];
-  if (!project) return;
-  branches.value = true;
-  format.value = "all";
-  query.value = "";
-  view.value = "map";
-  activeLane.value = id;
-  await nextTick();
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  document.querySelector<HTMLElement>(".map-heading")?.scrollIntoView({
-    block: "start",
-    behavior: reduced ? "auto" : "smooth",
-  });
-  moveTo(point(project).x, point(project).y);
+function applyZoom(value: number) {
+  cameraState.value.zoom = value;
 }
 function cancelPendingZoom() {
   if (zoomFrame !== undefined) cancelAnimationFrame(zoomFrame);
@@ -335,10 +367,10 @@ function setZoom(
   );
   if (value === zoom.value) return;
 
-  zoom.value = value;
+  applyZoom(value);
   pendingZoomScroll = {
-    x: Math.max(0, anchor.x * value - viewportOffset.x),
-    y: Math.max(0, anchor.y * value - viewportOffset.y),
+    x: Math.max(0, anchor.x * value + canvasPad.x - viewportOffset.x),
+    y: Math.max(0, anchor.y * value + canvasPad.y - viewportOffset.y),
   };
   if (zoomFrame !== undefined) return;
 
@@ -351,19 +383,41 @@ function setZoom(
     syncScroll();
   });
 }
-function changeZoom(delta: number) {
+function changeZoom(direction: number) {
   const element = viewport.value;
   if (!element) return;
   const position = pendingZoomScroll ?? { x: element.scrollLeft, y: element.scrollTop };
   const viewportOffset = { x: element.clientWidth / 2, y: element.clientHeight / 2 };
+  const anchor = canvasFromScroll(
+    position.x + viewportOffset.x,
+    position.y + viewportOffset.y,
+  );
   setZoom(
-    zoom.value + delta,
-    {
-      x: (position.x + viewportOffset.x) / zoom.value,
-      y: (position.y + viewportOffset.y) / zoom.value,
-    },
+    direction > 0 ? zoom.value * zoomLimits.factor : zoom.value / zoomLimits.factor,
+    anchor,
     viewportOffset,
   );
+}
+function fitCanvas() {
+  const element = viewport.value;
+  if (!element) return;
+  const size = canvas.value;
+  const next = Math.min(
+    (element.clientWidth - 28) / size.width,
+    (element.clientHeight - 28) / size.height,
+  );
+  cancelPendingZoom();
+  applyZoom(Math.max(zoomLimits.min, Math.min(zoomLimits.max, Math.round(next * 1000) / 1000)));
+  nextTick(() => {
+    const scaledWidth = size.width * zoom.value;
+    const scaledHeight = size.height * zoom.value;
+    element.scrollTo({
+      left: Math.max(0, canvasPad.x - (element.clientWidth - scaledWidth) / 2),
+      top: Math.max(0, canvasPad.y - (element.clientHeight - scaledHeight) / 2),
+      behavior: "instant",
+    });
+    syncScroll();
+  });
 }
 function zoomMap(event: WheelEvent) {
   if ((!event.ctrlKey && !event.metaKey) || !event.deltaY || !viewport.value) return;
@@ -376,12 +430,13 @@ function zoomMap(event: WheelEvent) {
     y: Math.max(0, Math.min(element.clientHeight, event.clientY - box.top)),
   };
   const position = pendingZoomScroll ?? { x: element.scrollLeft, y: element.scrollTop };
+  const anchor = canvasFromScroll(
+    position.x + viewportOffset.x,
+    position.y + viewportOffset.y,
+  );
   setZoom(
-    zoom.value + (event.deltaY < 0 ? zoomLimits.step : -zoomLimits.step),
-    {
-      x: (position.x + viewportOffset.x) / zoom.value,
-      y: (position.y + viewportOffset.y) / zoom.value,
-    },
+    event.deltaY < 0 ? zoom.value * zoomLimits.factor : zoom.value / zoomLimits.factor,
+    anchor,
     viewportOffset,
   );
 }
@@ -391,10 +446,196 @@ async function resetMap() {
   branches.value = true;
   activeLane.value = "mcu";
   cancelPendingZoom();
-  zoom.value = initialZoom;
+  applyZoom(0.85);
   await nextTick();
   syncScroll();
-  moveTo(scroll.width / (2 * zoom.value), geometry.mainY - 48, false);
+  moveTo(timelineGeometry.padding + 320, timelineGeometry.mainY - 40, false);
+}
+function goToRoots() {
+  const element = viewport.value;
+  if (!element) return;
+  cameraState.value.x = Math.max(
+    0,
+    treeGeometry.trunkX * zoom.value + canvasPad.x - scroll.width / 2,
+  );
+  cameraState.value.y = Math.max(
+    0,
+    treeGeometry.height * zoom.value + canvasPad.y - scroll.height,
+  );
+  element.scrollTo({
+    left: cameraState.value.x,
+    top: cameraState.value.y,
+    behavior: prefersReducedMotion() ? "instant" : "smooth",
+  });
+}
+function goToCrown() {
+  const point = treeCrownLabelPoint();
+  moveTo(point.x, point.y + 200);
+}
+async function goToProject(id: string) {
+  const project = projectById.get(id);
+  if (!project) return;
+  if (project.lane !== "mcu") branches.value = true;
+  format.value = "all";
+  query.value = "";
+  await nextTick();
+  activeLane.value = project.lane;
+  if (view.value === "list") {
+    document
+      .getElementById(`list-${id}`)
+      ?.scrollIntoView({ block: "center", behavior: "instant" });
+    return;
+  }
+  moveTo(nodeCenter(project).x, nodeCenter(project).y);
+}
+async function goToUniverse(id: string) {
+  const nodes = laneProjects(id);
+  const project = nodes[Math.floor(nodes.length / 2)];
+  if (!project) return;
+  branches.value = true;
+  format.value = "all";
+  query.value = "";
+  if (view.value === "list") view.value = "timeline";
+  activeLane.value = id;
+  await nextTick();
+  const reduced = prefersReducedMotion();
+  document.querySelector<HTMLElement>(".map-heading")?.scrollIntoView({
+    block: "start",
+    behavior: reduced ? "auto" : "smooth",
+  });
+  moveTo(nodeCenter(project).x, nodeCenter(project).y);
+}
+function overviewNavigate(event: MouseEvent) {
+  const box =
+    event.currentTarget instanceof Element ? event.currentTarget.getBoundingClientRect() : null;
+  if (box)
+    moveTo(
+      ((event.clientX - box.left) / box.width) * canvas.value.width,
+      ((event.clientY - box.top) / box.height) * canvas.value.height,
+    );
+}
+
+/* ------------------------------ focus and keys ----------------------------- */
+
+const tabStopId = computed(() => focusId.value ?? filtered.value[0]?.id ?? null);
+function focusNode(project: Project, options: { move?: boolean } = {}) {
+  focusId.value = project.id;
+  nextTick(() => {
+    const element = viewport.value?.querySelector<HTMLElement>(
+      `[data-project="${project.id}"]`,
+    );
+    element?.focus({ preventScroll: true });
+    if (options.move !== false) ensureVisible(nodeCenter(project));
+  });
+}
+function moveFocus(direction: "left" | "right" | "up" | "down") {
+  const visible = filtered.value;
+  const current = visible.find((project) => project.id === focusId.value);
+  if (!current) {
+    const first = visible[0];
+    if (first) focusNode(first);
+    return;
+  }
+  const origin = nodeCenter(current);
+
+  if (direction === "left" || direction === "right") {
+    const sameLane = visible
+      .filter((project) => project.lane === current.lane)
+      .sort((a, b) => nodeCenter(a).x - nodeCenter(b).x);
+    const index = sameLane.findIndex((project) => project.id === current.id);
+    const next = sameLane[index + (direction === "left" ? -1 : 1)];
+    if (next) focusNode(next);
+    return;
+  }
+
+  const candidates = visible.filter((project) => {
+    const point = nodeCenter(project);
+    return direction === "up" ? point.y < origin.y - 6 : point.y > origin.y + 6;
+  });
+  const nearest = candidates.sort((a, b) => {
+    const pointA = nodeCenter(a);
+    const pointB = nodeCenter(b);
+    const scoreA = Math.abs(pointA.y - origin.y) * 1.5 + Math.abs(pointA.x - origin.x);
+    const scoreB = Math.abs(pointB.y - origin.y) * 1.5 + Math.abs(pointB.x - origin.x);
+    return scoreA - scoreB;
+  })[0];
+  if (nearest) focusNode(nearest);
+}
+function nodeKeydown(event: KeyboardEvent) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.dataset.project) return;
+  const directions: Record<string, "left" | "right" | "up" | "down"> = {
+    ArrowLeft: "left",
+    ArrowRight: "right",
+    ArrowUp: "up",
+    ArrowDown: "down",
+  };
+  const direction = directions[event.key];
+  if (direction) {
+    event.preventDefault();
+    moveFocus(direction);
+    return;
+  }
+  if (event.key === "Escape") {
+    highlighted.value = null;
+    expandedLane.value = null;
+    target.blur();
+  }
+}
+function keyboardMap(event: KeyboardEvent) {
+  if (event.target !== viewport.value) return;
+  const offsets: Record<string, [number, number]> = {
+    ArrowLeft: [-240, 0],
+    ArrowRight: [240, 0],
+    ArrowUp: [0, -180],
+    ArrowDown: [0, 180],
+  };
+  const offset = offsets[event.key];
+  if (offset) {
+    event.preventDefault();
+    viewport.value?.scrollBy({ left: offset[0], top: offset[1], behavior: "instant" });
+  }
+  if (event.key === "Home") {
+    event.preventDefault();
+    if (view.value === "tree") goToRoots();
+    else resetMap();
+  }
+  if (event.key === "End" && view.value === "tree") {
+    event.preventDefault();
+    goToCrown();
+  }
+}
+
+/* ------------------------------- interaction ------------------------------- */
+
+function nodeEnter(project: Project) {
+  highlighted.value = project.id;
+  activeLane.value = project.lane;
+  expandedLane.value = project.lane;
+}
+function nodeLeave() {
+  highlighted.value = null;
+  expandedLane.value = null;
+}
+function nodeFocus(project: Project) {
+  focusId.value = project.id;
+  highlighted.value = project.id;
+  activeLane.value = project.lane;
+  expandedLane.value = project.lane;
+}
+function nodeBlur() {
+  highlighted.value = null;
+  expandedLane.value = null;
+}
+function expandLane(id: string) {
+  if (drag.active) return;
+  expandedLane.value = id;
+}
+function collapseLane() {
+  expandedLane.value = null;
+}
+function failPoster(id: string) {
+  failedPosters.value = new Set([...failedPosters.value, id]);
 }
 function openProject(project: Project, event?: MouseEvent) {
   if (drag.moved) return;
@@ -415,7 +656,7 @@ async function revealSelected() {
   const id = selectedId.value;
   if (!id) return;
   closeProject();
-  view.value = "map";
+  if (view.value === "list") view.value = "timeline";
   await nextTick();
   goToProject(id);
 }
@@ -431,6 +672,20 @@ function onDialogClose() {
   spoilers.value = false;
   dialogTrigger?.focus({ preventScroll: true });
 }
+const selectedConnections = computed(() =>
+  connections.filter(
+    (link) =>
+      !isBackboneLink(link) &&
+      (link.source === selectedId.value || link.target === selectedId.value),
+  ),
+);
+const selectedEvents = computed(() =>
+  events.filter(
+    (event) =>
+      event.project === selectedId.value ||
+      selectedConnections.value.some((link) => link.event === event.id),
+  ),
+);
 function startDrag(event: PointerEvent) {
   // Touch uses native two-axis scrolling and browser pinch zoom.
   drag.moved = false;
@@ -459,81 +714,68 @@ function stopDrag() {
     viewport.value.releasePointerCapture(drag.pointerId);
   drag.active = false;
 }
-function keyboardMap(event: KeyboardEvent) {
-  if (event.target !== viewport.value) return;
-  const offsets: Record<string, [number, number]> = {
-    ArrowLeft: [-240, 0],
-    ArrowRight: [240, 0],
-    ArrowUp: [0, -180],
-    ArrowDown: [0, 180],
-  };
-  const offset = offsets[event.key];
-  if (offset) {
-    event.preventDefault();
-    viewport.value?.scrollBy({ left: offset[0], top: offset[1], behavior: "instant" });
+
+/* -------------------------------- view state ------------------------------- */
+
+let resizeObserver: ResizeObserver | undefined;
+let zoomFrame: number | undefined;
+let pendingZoomScroll: { x: number; y: number } | undefined;
+
+function saveCamera() {
+  cameraState.value.x = scroll.x;
+  cameraState.value.y = scroll.y;
+}
+async function enterCanvasView() {
+  await nextTick();
+  const element = viewport.value;
+  if (!element) return;
+  resizeObserver?.observe(element);
+  const state = cameraState.value;
+  if (!state.touched) {
+    state.touched = true;
+    if (canvasView.value === "tree") {
+      element.scrollTo({
+        left: Math.max(0, treeGeometry.trunkX * state.zoom + canvasPad.x - element.clientWidth / 2),
+        top: Math.max(0, treeGeometry.height * state.zoom + canvasPad.y - element.clientHeight),
+        behavior: "instant",
+      });
+    } else {
+      applyZoom(0.85);
+      await nextTick();
+      moveTo(timelineGeometry.padding + 320, timelineGeometry.mainY - 40, false);
+    }
+  } else {
+    element.scrollTo({ left: state.x, top: state.y, behavior: "instant" });
   }
-  if (event.key === "Home") {
-    event.preventDefault();
-    resetMap();
-  }
+  syncScroll();
 }
-function overviewNavigate(event: MouseEvent) {
-  const box =
-    event.currentTarget instanceof Element ? event.currentTarget.getBoundingClientRect() : null;
-  if (box)
-    moveTo(
-      ((event.clientX - box.left) / box.width) * geometry.width,
-      ((event.clientY - box.top) / box.height) * geometry.height,
-    );
-}
-function nodeTop(project: Project) {
-  const position = point(project);
-  return project.lane === "mcu"
-    ? position.y + (project.slot % 2 === 0 ? -205 : 72)
-    : position.y - 166;
-}
-function laneBounds(id: string) {
-  return laneBoundsById.get(id)!;
-}
-function failPoster(id: string) {
-  failedPosters.value = new Set([...failedPosters.value, id]);
-}
+watch(view, async (next, previous) => {
+  if (previous !== "list" && next === "list") saveCamera();
+  if (next === "list") return;
+  await enterCanvasView();
+});
 watch([format, branches, normalizedQuery], () => {
   activeLane.value = "mcu";
+  if (view.value === "list") return;
   const first = filtered.value[0];
   if (first && (normalizedQuery.value || format.value !== "all")) {
     activeLane.value = first.lane;
-    nextTick(() => moveTo(point(first).x, point(first).y, false));
+    nextTick(() => moveTo(nodeCenter(first).x, nodeCenter(first).y, false));
   }
-  if (!branches.value && !normalizedQuery.value && format.value === "all")
-    nextTick(() => moveTo((scroll.x + scroll.width / 2) / zoom.value, geometry.mainY, false));
 });
 watch(viewport, (element, previous) => {
   if (previous) resizeObserver?.unobserve(previous);
   if (!element) return;
   resizeObserver?.observe(element);
   syncScroll();
-  if (!normalizedQuery.value && format.value === "all")
-    moveTo(scroll.width / (2 * zoom.value), geometry.mainY, false);
 });
-watch(view, async (next, previous) => {
-  if (previous === "map") savedMapPosition = { x: scroll.x, y: scroll.y };
-  await nextTick();
-  if (next === "map" && viewport.value) {
-    resizeObserver?.observe(viewport.value);
-    viewport.value.scrollTo({
-      left: savedMapPosition.x,
-      top: savedMapPosition.y,
-      behavior: "instant",
-    });
-    syncScroll();
-  }
-});
-onMounted(() => {
+onMounted(async () => {
   resizeObserver = new ResizeObserver(syncScroll);
+  cameraState.value.touched = true;
+  await nextTick();
   if (viewport.value) resizeObserver.observe(viewport.value);
   syncScroll();
-  resetMap();
+  await resetMap();
 });
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
@@ -624,23 +866,34 @@ onBeforeUnmount(() => {
             ><span class="visually-hidden">Найти проект или ветку</span
             ><input v-model="query" type="search" placeholder="Найти проект или ветку"
           /></label>
-          <div class="view-toggle" role="group" aria-label="Отображение">
+          <div class="view-toggle" role="group" aria-label="Режим чтения карты">
             <button
               type="button"
-              :aria-pressed="view === 'map'"
-              aria-label="Показать карту"
-              title="Карта"
-              @click="view = 'map'"
+              :aria-pressed="view === 'timeline'"
+              aria-label="Таймлайн: порядок проектов"
+              title="Порядок проектов слева направо"
+              @click="view = 'timeline'"
             >
-              <span class="material-symbols-outlined" aria-hidden="true">account_tree</span></button
+              <span class="material-symbols-outlined" aria-hidden="true">linear_scale</span
+              ><span class="view-toggle__label">Таймлайн</span></button
+            ><button
+              type="button"
+              :aria-pressed="view === 'tree'"
+              aria-label="Древо: устройство мультивселенной"
+              title="Древо мультивселенной снизу вверх"
+              @click="view = 'tree'"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true">account_tree</span
+              ><span class="view-toggle__label">Древо</span></button
             ><button
               type="button"
               :aria-pressed="view === 'list'"
-              aria-label="Показать список"
-              title="Список"
+              aria-label="Список: найти проект"
+              title="Каталог проектов"
               @click="view = 'list'"
             >
-              <span class="material-symbols-outlined" aria-hidden="true">view_list</span>
+              <span class="material-symbols-outlined" aria-hidden="true">view_list</span
+              ><span class="view-toggle__label">Список</span>
             </button>
           </div>
         </div>
@@ -648,14 +901,14 @@ onBeforeUnmount(() => {
       <div class="atlas-navigation">
         <nav class="chapters" aria-label="Эпохи основной линии">
           <button
-            v-for="(chapter, index) in chapters"
+            v-for="chapter in timelineChapters"
             :key="chapter.id"
             type="button"
-            :class="{ 'is-current': chapterIndex === index }"
+            :class="{ 'is-current': chapterIndex === chapter.index }"
             :title="chapter.years"
             @click="goToProject(chapter.id)"
           >
-            <span>0{{ index + 1 }}</span
+            <span>0{{ chapter.index + 1 }}</span
             >{{ chapter.title }}
           </button>
         </nav>
@@ -666,9 +919,7 @@ onBeforeUnmount(() => {
       <div class="map-heading">
         <div>
           <span class="route-key"></span><strong>{{ laneById.get(activeLane)?.title }}</strong
-          ><span class="map-heading__note">{{
-            activeLane === "mcu" ? "Сюжетная хронология" : laneById.get(activeLane)?.order
-          }}</span>
+          ><span class="map-heading__note">{{ headingNote }}</span>
         </div>
         <span class="result-count" role="status"
           >Показано {{ filtered.length }} / {{ projects.length }}</span
@@ -680,15 +931,18 @@ onBeforeUnmount(() => {
         <p>По запросу «{{ query }}» с выбранными фильтрами ничего не найдено.</p>
         <button type="button" @click="resetMap">Сбросить фильтры</button>
       </div>
-      <template v-else-if="view === 'map'">
-        <div class="map-frame">
+      <template v-else-if="view !== 'list'">
+        <div class="map-frame" :class="{ 'map-frame--tree': view === 'tree' }">
           <div
             ref="viewport"
             class="map-viewport"
-            :class="{ 'is-dragging': drag.active && drag.moved }"
+            :class="{
+              'is-dragging': drag.active && drag.moved,
+              'map-viewport--tree': view === 'tree',
+            }"
             tabindex="0"
             role="region"
-            aria-label="Карта Marvel. Стрелки перемещают карту, Home возвращает к началу, Ctrl и колесо изменяют масштаб. Можно переключиться на список."
+            :aria-label="canvasLabel"
             @scroll.passive="syncScroll"
             @pointerdown="startDrag"
             @pointermove="dragMap"
@@ -702,333 +956,439 @@ onBeforeUnmount(() => {
             <div
               class="map-space"
               :style="{
-                width: `${geometry.width * zoom}px`,
-                height: `${geometry.height * zoom}px`,
+                width: `${canvas.width * zoom + canvasPad.x * 2}px`,
+                height: `${canvas.height * zoom + canvasPad.y * 2}px`,
               }"
             >
               <div
                 class="map-canvas"
-                :class="{ 'map-canvas--lane-focus': expandedLane !== null }"
+                :class="canvasClasses"
                 :style="{
-                  width: `${geometry.width}px`,
-                  height: `${geometry.height}px`,
+                  width: `${canvas.width}px`,
+                  height: `${canvas.height}px`,
+                  left: `${canvasPad.x}px`,
+                  top: `${canvasPad.y}px`,
                   transform: `scale(${zoom})`,
                 }"
+                @keydown="nodeKeydown"
               >
                 <svg
                   class="map-lines"
-                  :width="geometry.width"
-                  :height="geometry.height"
+                  :width="canvas.width"
+                  :height="canvas.height"
                   aria-hidden="true"
                 >
-                  <g v-if="shownLanes.some((lane) => lane.kind === 'main')" class="timeline-trunk">
-                    <path
-                      :d="strandPath(42, geometry.width - 58, geometry.mainY, 0, 0)"
-                      class="timeline-trunk__halo"
-                    />
-                    <path
-                      v-for="(offset, strandIndex) in mainStrandOffsets"
-                      :key="offset"
-                      :d="strandPath(42, geometry.width - 58, geometry.mainY, offset, strandIndex)"
-                      class="timeline-strand timeline-strand--main"
-                      :class="{ 'timeline-strand--core': offset === 0 }"
-                    />
-                    <path
-                      v-for="(offset, branchIndex) in futureBranchOffsets"
-                      :key="`future-${offset}`"
-                      :d="futureBranchPath(offset, branchIndex)"
-                      class="future-branch"
-                    />
-                  </g>
-                  <g
-                    v-for="link in shownConnections"
-                    :key="link.id"
-                    class="connection-group"
-                    :class="{
-                      'connection-group--active':
-                        highlighted === link.source ||
-                        highlighted === link.target ||
-                        isLaneLink(link),
-                    }"
-                  >
-                    <path :d="connectionBranchPath(link, 0, 1)" class="connection-halo" />
-                    <path
-                      v-for="(offset, fiberIndex) in connectionFiberOffsets"
-                      :key="offset"
-                      :d="connectionBranchPath(link, offset, fiberIndex)"
-                      :stroke="laneById.get(projectById.get(link.source)!.lane)!.color"
-                      class="connection"
-                      :class="{
-                        'connection--core': offset === 0,
-                        'connection--disputed': link.confidence === 'disputed',
-                        'connection--order': link.relation === 'precedes',
-                      }"
-                    />
-                  </g>
-                  <g v-for="project in filtered" :key="project.id">
-                    <line
-                      v-if="project.lane === 'mcu' || connectedIds.has(project.id)"
-                      :x1="point(project).x"
-                      :x2="point(project).x"
-                      :y1="
-                        point(project).y +
-                        (project.lane === 'mcu' && project.slot % 2 !== 0
-                          ? 24
-                          : project.lane === 'mcu'
-                            ? -24
-                            : 0)
-                      "
-                      :y2="
-                        project.lane === 'mcu' && project.slot % 2 !== 0
-                          ? nodeTop(project)
-                          : nodeTop(project) + nodeSize(project).height
-                      "
-                      :stroke="laneById.get(project.lane)!.color"
-                      class="node-tether"
-                    />
-                    <circle
-                      v-if="project.lane === 'mcu' || connectedIds.has(project.id)"
-                      :cx="point(project).x"
-                      :cy="point(project).y"
-                      :r="project.major ? 9 : 6"
-                      :fill="project.lane === 'mcu' ? '#100b06' : 'var(--canvas)'"
-                      :stroke="
-                        project.lane === 'mcu'
-                          ? 'var(--red)'
-                          : laneById.get(project.lane)!.color
-                      "
-                      class="timeline-junction"
-                      :class="{ 'timeline-junction--major': project.major }"
-                    />
-                    <circle
-                      v-if="
-                        project.major && (project.lane === 'mcu' || connectedIds.has(project.id))
-                      "
-                      :cx="point(project).x"
-                      :cy="point(project).y"
-                      r="3"
-                      fill="#fff3b0"
-                      class="timeline-junction__core"
-                    />
-                    <text
-                      v-if="project.lane === 'mcu'"
-                      :x="point(project).x + 17"
-                      :y="point(project).y + 4"
-                      class="axis-year"
+                  <template v-if="view === 'timeline'">
+                    <g v-if="shownLanes.some((lane) => lane.kind === 'main')" class="timeline-trunk">
+                      <path
+                        :d="timelineStrandPath(42, canvas.width - 58, timelineGeometry.mainY, 0, 0)"
+                        class="timeline-trunk__halo"
+                      />
+                      <path
+                        v-for="(offset, strandIndex) in timelineStrandOffsets[detail]"
+                        :key="`strand-${offset}`"
+                        :d="
+                          timelineStrandPath(
+                            42,
+                            canvas.width - 58,
+                            timelineGeometry.mainY,
+                            offset,
+                            strandIndex,
+                          )
+                        "
+                        class="timeline-strand timeline-strand--main"
+                        :class="{ 'timeline-strand--core': offset === 0 }"
+                      />
+                      <path
+                        v-for="(offset, branchIndex) in timelineFutureOffsets"
+                        v-show="detail !== 'overview'"
+                        :key="`future-${offset}`"
+                        :d="timelineFuturePath(offset, branchIndex)"
+                        class="future-branch"
+                      />
+                    </g>
+                    <g
+                      v-for="link in shownConnections"
+                      :key="link.id"
+                      class="connection-group"
+                      :class="{ 'is-active': isLinkActive(link) }"
                     >
-                      {{ project.story }}
-                    </text>
-                  </g>
+                      <path
+                        :d="timelineConnectionPath(link, 0, 1)"
+                        :stroke="linkColor(link)"
+                        class="connection connection--core"
+                        :class="{
+                          'connection--disputed': link.confidence === 'disputed',
+                          'connection--order': link.relation === 'precedes',
+                        }"
+                      />
+                    </g>
+                    <template v-for="project in filtered" :key="`junction-${project.id}`">
+                      <line
+                        v-if="project.lane === 'mcu' || connectedIds.has(project.id)"
+                        :x1="timelineAnchor(project).x"
+                        :x2="timelineAnchor(project).x"
+                        :y1="timelineAnchor(project).y"
+                        :y2="nodeCenter(project).y"
+                        :stroke="laneById.get(project.lane)!.color"
+                        class="node-tether"
+                      />
+                      <circle
+                        v-if="project.lane === 'mcu' || connectedIds.has(project.id)"
+                        :cx="timelineAnchor(project).x"
+                        :cy="timelineAnchor(project).y"
+                        :r="project.major ? 7 : 5"
+                        :stroke="laneById.get(project.lane)!.color"
+                        class="timeline-junction"
+                        :class="{ 'timeline-junction--major': project.major }"
+                      />
+                      <text
+                        v-if="project.lane === 'mcu' && detail !== 'overview'"
+                        :x="timelineAnchor(project).x"
+                        :y="timelineGeometry.mainY + 36"
+                        class="axis-year"
+                      >
+                        {{ project.story }}
+                      </text>
+                    </template>
+                  </template>
+                  <template v-else>
+                    <g class="tree-roots">
+                      <path
+                        v-for="(rootPath, index) in treeRootPaths"
+                        :key="`root-${index}`"
+                        :d="rootPath"
+                        class="tree-root"
+                      />
+                    </g>
+                    <g class="tree-crown">
+                      <path
+                        v-for="(crown, index) in treeCrownBranches"
+                        :key="`crown-${index}`"
+                        :d="crown.d"
+                        class="tree-crown__limb"
+                      />
+                      <circle
+                        v-for="(crown, index) in treeCrownBranches"
+                        :key="`crown-tip-${index}`"
+                        :cx="crown.tip.x"
+                        :cy="crown.tip.y"
+                        r="3"
+                        class="tree-crown__tip"
+                      />
+                    </g>
+                    <g class="tree-trunk">
+                      <path
+                        v-for="offset in treeStrandOffsets"
+                        :key="`trunk-${offset}`"
+                        :d="treeTrunkSpine(offset)"
+                        class="tree-strand"
+                        :class="{ 'tree-strand--core': offset === 0 }"
+                      />
+                    </g>
+                    <path
+                      v-if="
+                        detail !== 'overview' && shownLanes.some((lane) => lane.id === 'tva')
+                      "
+                      :d="treeOrbitPath()"
+                      class="tree-orbit"
+                    />
+                    <path
+                      v-for="lane in treeBranchLanes"
+                      :key="`branch-${lane.id}`"
+                      :d="treeBranchSpine(lane.id)"
+                      :stroke="lane.color"
+                      class="tree-branch"
+                      :class="{ 'is-active': expandedLane === lane.id }"
+                    />
+                    <g
+                      v-for="link in shownConnections"
+                      :key="link.id"
+                      class="connection-group"
+                      :class="{ 'is-active': isLinkActive(link) }"
+                    >
+                      <path
+                        :d="treeConnectionPath(link)"
+                        :stroke="linkColor(link)"
+                        class="connection connection--core"
+                        :class="{ 'connection--disputed': link.confidence === 'disputed' }"
+                      />
+                    </g>
+                    <template v-for="project in filtered" :key="`tree-junction-${project.id}`">
+                      <line
+                        v-if="project.lane === 'mcu'"
+                        :x1="treeTrunkAnchor(project).x"
+                        :y1="treeTrunkAnchor(project).y"
+                        :x2="nodeCenter(project).x"
+                        :y2="nodeCenter(project).y"
+                        :stroke="laneById.get(project.lane)!.color"
+                        class="node-tether"
+                      />
+                      <circle
+                        v-if="project.lane === 'mcu' || connectedIds.has(project.id)"
+                        :cx="treeTrunkAnchor(project).x"
+                        :cy="treeTrunkAnchor(project).y"
+                        :r="project.major ? 5 : 3.5"
+                        :stroke="laneById.get(project.lane)!.color"
+                        class="timeline-junction"
+                        :class="{ 'timeline-junction--major': project.major }"
+                      />
+                    </template>
+                  </template>
                 </svg>
-                <button
-                  v-for="lane in shownLanes.filter((item) => item.kind !== 'main')"
-                  :key="lane.id"
-                  type="button"
-                  class="lane-label"
-                  :class="{ 'lane-label--expanded': expandedLane === lane.id }"
-                  :style="{
-                    left: `${laneBounds(lane.id).start}px`,
-                    top: `${lane.y + 8}px`,
-                    '--lane-color': lane.color,
-                  }"
-                  :aria-label="`Перейти к ветке: ${lane.title}`"
-                  @click="goToUniverse(lane.id)"
-                  @pointerenter="expandLane(lane.id)"
-                  @pointerleave="collapseLane()"
-                  @focus="expandLane(lane.id)"
-                  @blur="collapseLane()"
-                >
-                  <em>{{ laneKindLabels[lane.kind] }} · {{ laneProjectCount(lane.id) }}</em>
-                  <span>{{ lane.title }}</span>
-                  <small>{{ lane.universe }}</small>
-                </button>
-                <div
-                  v-for="(chapter, index) in chapters"
-                  v-show="!normalizedQuery"
-                  :key="chapter.id"
-                  class="epoch-label"
-                  :style="{
-                    left: `${point(projectById.get(chapter.id)!).x - 104}px`,
-                    top: `${geometry.mainY - 264}px`,
-                  }"
-                >
-                  <span>0{{ index + 1 }}</span
-                  >{{ chapter.title }}<small>{{ chapter.years }}</small>
-                </div>
-                <div
-                  v-for="zone in laneZones"
-                  :key="`zone-${zone.id}`"
-                  class="lane-zone"
-                  aria-hidden="true"
-                  :style="{
-                    left: `${zone.left}px`,
-                    top: `${zone.top}px`,
-                    width: `${zone.width}px`,
-                    height: `${zone.height}px`,
-                  }"
-                  @pointerenter="expandLane(zone.id)"
-                  @pointerleave="collapseLane()"
-                />
-                <button
+
+                <template v-if="view === 'timeline'">
+                  <div
+                    v-for="zone in laneZones"
+                    :key="`zone-${zone.id}`"
+                    class="lane-zone"
+                    aria-hidden="true"
+                    :style="{
+                      left: `${zone.left}px`,
+                      top: `${zone.top}px`,
+                      width: `${zone.width}px`,
+                      height: `${zone.height}px`,
+                      '--lane-color': zone.color,
+                    }"
+                    @pointerenter="expandLane(zone.id)"
+                    @pointerleave="collapseLane()"
+                  />
+                  <div
+                    v-for="chapter in timelineChapters"
+                    :key="`epoch-${chapter.id}`"
+                    class="epoch-section"
+                    :style="{ left: `${chapterX(chapter)}px` }"
+                    aria-hidden="true"
+                  >
+                    <span class="epoch-section__index">0{{ chapter.index + 1 }}</span>
+                    <strong>{{ chapter.title }}</strong>
+                    <small>{{ chapter.years }}</small>
+                  </div>
+                  <button
+                    v-for="lane in laneLabels"
+                    :key="`lane-label-${lane.id}`"
+                    type="button"
+                    class="lane-label"
+                    :class="{ 'lane-label--expanded': expandedLane === lane.id }"
+                    :style="laneLabelStyle(lane)"
+                    :aria-label="`Перейти к ветке: ${lane.title}`"
+                    @click="goToUniverse(lane.id)"
+                    @pointerenter="expandLane(lane.id)"
+                    @pointerleave="collapseLane()"
+                    @focus="expandLane(lane.id)"
+                    @blur="collapseLane()"
+                  >
+                    <em>{{ laneKindLabels[lane.kind] }} · {{ laneProjectCount(lane.id) }}</em>
+                    <span>{{ lane.title }}</span>
+                    <small>{{ lane.universe }}</small>
+                  </button>
+                </template>
+                <template v-else>
+                  <div
+                    class="tree-marker tree-marker--roots"
+                    :style="markerStyle(treeRootLabelPoint())"
+                    aria-hidden="true"
+                  >
+                    <span>Корни</span><strong>Земля-616 · начало линии</strong
+                    ><small>Время идёт вверх</small>
+                  </div>
+                  <div
+                    class="tree-marker tree-marker--crown"
+                    :style="markerStyle(treeCrownLabelPoint())"
+                    aria-hidden="true"
+                  >
+                    <span>Крона</span><strong>Незавершённые ветви</strong>
+                  </div>
+                  <button
+                    v-for="lane in treeBranchLanes"
+                    :key="`tree-label-${lane.id}`"
+                    type="button"
+                    class="tree-lane-label"
+                    :class="[
+                      `tree-lane-label--${treeLaneSide(lane.id)}`,
+                      { 'is-active': expandedLane === lane.id },
+                    ]"
+                    :style="treeLabelStyle(lane)"
+                    :aria-label="`Перейти к ветке: ${lane.title}`"
+                    @click="goToUniverse(lane.id)"
+                    @pointerenter="expandLane(lane.id)"
+                    @pointerleave="collapseLane()"
+                    @focus="expandLane(lane.id)"
+                    @blur="collapseLane()"
+                  >
+                    <em>{{ laneKindLabels[lane.kind] }} · {{ laneProjectCount(lane.id) }}</em>
+                    <span>{{ lane.title }}</span>
+                    <small>{{ lane.universe }}</small>
+                  </button>
+                </template>
+
+                <ProjectMedallion
                   v-for="project in filtered"
                   :key="project.id"
-                  type="button"
-                  class="project-node"
-                  :class="{
-                    'project-node--main': project.lane === 'mcu',
-                    'project-node--major': project.major,
-                    'project-node--compact': project.media === 'special',
-                    'project-node--wide': project.major && project.media !== 'special',
-                    'is-related': relatedIds.has(project.id),
-                    'is-highlighted': highlighted === project.id,
-                    'is-lane-expanded': expandedLane === project.lane,
-                  }"
-                  :style="{
-                    left: `${point(project).x - nodeSize(project).width / 2}px`,
-                    top: `${nodeTop(project)}px`,
-                    '--lane-color': laneById.get(project.lane)!.color,
-                  }"
+                  :data-project="project.id"
+                  :tabindex="tabStopId === project.id ? 0 : -1"
+                  :project="project"
+                  :detail="detail"
+                  :side="nodeSide(project)"
+                  :lane-color="laneById.get(project.lane)!.color"
+                  :poster-failed="failedPosters.has(project.id)"
+                  :class="nodeClasses(project)"
+                  :style="nodeStyle(project)"
                   :aria-label="`${project.title}. ${mediaLabels[project.media]}, ${project.releaseYear}. Открыть сведения и связи`"
                   @click="openProject(project, $event)"
-                  @keydown.enter="drag.moved = false"
-                  @keydown.space="drag.moved = false"
-                  @pointerenter="
-                    highlighted = project.id;
-                    activeLane = project.lane;
-                    expandedLane = project.lane;
-                  "
-                  @pointerleave="
-                    highlighted = null;
-                    expandedLane = null;
-                  "
-                  @focus="
-                    highlighted = project.id;
-                    activeLane = project.lane;
-                    expandedLane = project.lane;
-                  "
-                  @blur="
-                    highlighted = null;
-                    expandedLane = null;
-                  "
-                >
-                  <div class="node-topline">
-                    <span
-                      >{{ mediaLabels[project.media] }}
-                      <span class="node-release">/ {{ project.releaseYear }}</span></span
-                    ><span class="node-arrow" aria-hidden="true">↗</span>
-                  </div>
-                  <div class="node-content">
-                    <img
-                      v-if="project.poster && !failedPosters.has(project.id)"
-                      :src="`https://image.tmdb.org/t/p/w185/${project.poster}`"
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      draggable="false"
-                      @error="failPoster(project.id)"
-                    /><span
-                      v-else
-                      class="node-symbol material-symbols-outlined"
-                      aria-hidden="true"
-                      >{{
-                        project.media === "series"
-                          ? "live_tv"
-                          : project.media === "animation"
-                            ? "animation"
-                            : project.major
-                              ? "stars"
-                              : "movie"
-                      }}</span
-                    ><strong>{{ project.title }}</strong>
-                  </div>
-                  <div class="node-bottom">
-                    <span>{{
-                      project.lane === "mcu"
-                        ? String(project.slot + 1).padStart(2, "0") + " / MCU"
-                        : project.story
-                    }}</span
-                    ><span v-if="project.major" class="node-landmark">Ключевой</span>
-                  </div>
-                </button>
+                  @pointerenter="nodeEnter(project)"
+                  @pointerleave="nodeLeave()"
+                  @focus="nodeFocus(project)"
+                  @blur="nodeBlur()"
+                  @poster-error="failPoster(project.id)"
+                />
               </div>
             </div>
           </div>
           <div class="map-tools">
-            <label
-              ><span class="visually-hidden">Перейти к ветке</span
-              ><select v-model="activeLane" @change="goToUniverse(activeLane)">
-                <option v-for="lane in lanes" :key="lane.id" :value="lane.id">
-                  {{ lane.title }}
-                </option>
-              </select></label
-            >
-            <div class="zoom-controls">
-              <button
-                type="button"
-                aria-label="Уменьшить масштаб"
-                :disabled="zoom <= zoomLimits.min"
-                @click="changeZoom(-zoomLimits.step)"
+            <div class="map-tools__group">
+              <label class="tools-field"
+                ><span class="visually-hidden">Перейти к ветке</span
+                ><select v-model="activeLane" @change="goToUniverse(activeLane)">
+                  <option v-for="lane in lanes" :key="lane.id" :value="lane.id">
+                    {{ lane.title }}
+                  </option>
+                </select></label
               >
-                −</button
-              ><output aria-label="Масштаб">{{ Math.round(zoom * 100) }}%</output
-              ><button
-                type="button"
-                aria-label="Увеличить масштаб"
-                :disabled="zoom >= zoomLimits.max"
-                @click="changeZoom(zoomLimits.step)"
+              <label class="tools-field"
+                ><span class="visually-hidden">Отображение связей</span
+                ><select v-model="connectionVisibility">
+                  <option value="focus">Связи: по фокусу</option>
+                  <option value="all">Связи: все</option>
+                  <option value="hidden">Связи: скрыты</option>
+                </select></label
               >
-                +</button
-              ><button
-                type="button"
-                aria-label="Вернуться к началу карты"
-                title="К началу"
-                @click="resetMap"
-              >
-                <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span>
-              </button>
+            </div>
+            <div class="map-tools__group">
+              <div class="zoom-controls">
+                <button
+                  type="button"
+                  aria-label="Уменьшить масштаб"
+                  :disabled="zoom <= zoomLimits.min"
+                  @click="changeZoom(-1)"
+                >
+                  −</button
+                ><output aria-label="Масштаб">{{ Math.round(zoom * 100) }}%</output
+                ><button
+                  type="button"
+                  aria-label="Увеличить масштаб"
+                  :disabled="zoom >= zoomLimits.max"
+                  @click="changeZoom(1)"
+                >
+                  +
+                </button>
+              </div>
+              <template v-if="view === 'tree'">
+                <button type="button" class="tools-button" @click="goToRoots()">К корням</button
+                ><button type="button" class="tools-button" @click="goToCrown()">К кроне</button
+                ><button
+                  type="button"
+                  class="tools-button"
+                  aria-label="Показать древо целиком"
+                  @click="fitCanvas()"
+                >
+                  Всё
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  type="button"
+                  class="tools-button"
+                  aria-label="Возвратить исходный масштаб"
+                  @click="resetMap()"
+                >
+                  К началу</button
+                ><button
+                  type="button"
+                  class="tools-button"
+                  aria-label="Показать таймлайн целиком"
+                  @click="fitCanvas()"
+                >
+                  Всё
+                </button>
+              </template>
             </div>
           </div>
           <div class="map-hint" aria-hidden="true">
-            <span class="material-symbols-outlined">open_with</span> Перетаскивайте карту · Ctrl +
-            колесо меняет масштаб
+            <span class="material-symbols-outlined">open_with</span>
+            {{
+              view === "tree"
+                ? "Перетаскивайте древо · Home — к корням · End — к кроне"
+                : "Перетаскивайте карту · Ctrl + колесо меняет масштаб"
+            }}
           </div>
         </div>
-        <div class="overview-row">
+        <div class="overview-row" :class="{ 'overview-row--tree': view === 'tree' }">
           <div class="overview-label">
-            <span>Крона целиком</span><small>Рамка — видимая область</small>
+            <span>{{ view === "tree" ? "Древо целиком" : "Крона целиком" }}</span
+            ><small>Рамка — видимая область</small>
           </div>
           <svg
             class="overview"
-            :viewBox="`0 0 ${geometry.width} ${geometry.height}`"
+            :class="{ 'overview--tree': view === 'tree' }"
+            :viewBox="`0 0 ${canvas.width} ${canvas.height}`"
             preserveAspectRatio="none"
             role="img"
             aria-label="Обзор древа реальностей. Текущая область выделена рамкой."
             @click="overviewNavigate"
           >
-            <path
-              v-if="shownLanes.some((lane) => lane.kind === 'main')"
-              :d="strandPath(42, geometry.width - 58, geometry.mainY, 0, 0)"
-              stroke="var(--red)"
-              class="overview-trunk"
-            />
-            <path
-              v-for="link in shownConnections"
-              :key="link.id"
-              :d="connectionBranchPath(link, 0, 1)"
-              :stroke="laneById.get(projectById.get(link.source)!.lane)!.color"
-              class="overview-limb"
-            />
+            <template v-if="view === 'timeline'">
+              <path
+                v-if="shownLanes.some((lane) => lane.kind === 'main')"
+                :d="timelineStrandPath(42, canvas.width - 58, timelineGeometry.mainY, 0, 0)"
+                stroke="var(--red)"
+                class="overview-trunk"
+              />
+              <path
+                v-for="link in shownConnections"
+                :key="`overview-${link.id}`"
+                :d="timelineConnectionPath(link, 0, 1)"
+                :stroke="linkColor(link)"
+                class="overview-limb"
+              />
+              <circle
+                v-for="project in filtered.filter((item) => item.major)"
+                :key="`overview-node-${project.id}`"
+                :cx="timelineAnchor(project).x"
+                :cy="timelineAnchor(project).y"
+                r="16"
+                :fill="laneById.get(project.lane)!.color"
+                class="overview-node"
+              />
+            </template>
+            <template v-else>
+              <path :d="treeTrunkSpine(0)" stroke="var(--red)" class="overview-trunk" />
+              <path
+                v-for="lane in treeBranchLanes"
+                :key="`overview-branch-${lane.id}`"
+                :d="treeBranchSpine(lane.id)"
+                :stroke="lane.color"
+                class="overview-limb"
+              />
+              <path
+                v-if="shownLanes.some((lane) => lane.id === 'tva')"
+                :d="treeOrbitPath()"
+                class="overview-orbit"
+              />
+            </template>
             <rect
-              :x="scroll.x / zoom"
-              :y="scroll.y / zoom"
-              :width="scroll.width / zoom"
-              :height="scroll.height / zoom"
+              :x="Math.max(0, (scroll.x - canvasPad.x) / zoom)"
+              :y="Math.max(0, (scroll.y - canvasPad.y) / zoom)"
+              :width="Math.min(canvas.width, scroll.width / zoom)"
+              :height="Math.min(canvas.height, scroll.height / zoom)"
               fill="var(--accent-wash)"
               stroke="var(--red)"
               stroke-width="2"
               vector-effect="non-scaling-stroke"
             /></svg
-          ><span class="overview-end">Выберите ветвь<br />ниже ↘</span>
+          ><span class="overview-end">{{
+            view === "tree" ? "Низ — корни, верх — крона" : "Выберите ветвь ниже ↘"
+          }}</span>
         </div>
       </template>
       <div v-else class="project-list">
@@ -1572,7 +1932,7 @@ input[type="checkbox"] {
   cursor: grabbing;
   user-select: none;
 }
-.map-viewport.is-dragging .project-node {
+.map-viewport.is-dragging .medallion {
   cursor: grabbing;
 }
 .map-space {
@@ -1580,7 +1940,7 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 .map-canvas {
-  position: relative;
+  position: absolute;
   transform-origin: 0 0;
 }
 .map-lines {
@@ -1601,94 +1961,167 @@ input[type="checkbox"] {
   fill: #ecebe3;
   font: 9px var(--font-mono);
 }
-.project-node {
+/* Эпохи: вертикальные разделители вместо подписей поверх карточек. */
+.epoch-section {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 240px;
+  padding: 34px 0 0 16px;
+  border-inline-start: 1px solid color-mix(in srgb, var(--red) 30%, var(--rule));
+  pointer-events: none;
+}
+.epoch-section__index {
+  font: 9px var(--font-mono);
+  letter-spacing: 0.14em;
+  color: var(--red);
+}
+.epoch-section strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.epoch-section small {
+  font: 9px var(--font-mono);
+  color: var(--muted);
+}
+/* Дорожки реальностей: слабые полосы, чтобы глаз видел ветви, а не таблицу. */
+.lane-zone {
+  position: absolute;
+  z-index: 0;
+  border-block: 1px solid color-mix(in srgb, var(--lane-color) 20%, transparent);
+  background: color-mix(in srgb, var(--lane-color) 4%, transparent);
+}
+.map-canvas--focusing .lane-zone {
+  opacity: 0.5;
+}
+.lane-label--expanded {
+  background: var(--surface-hover);
+}
+/* Древо: ствол, ветви, корни, крона и орбита TVA. */
+.tree-strand,
+.tree-root,
+.tree-crown__limb,
+.tree-branch,
+.tree-orbit {
+  fill: none;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.tree-strand {
+  stroke: var(--red);
+  stroke-width: 1.2;
+  opacity: 0.32;
+}
+.tree-strand--core {
+  stroke-width: 2.6;
+  opacity: 0.9;
+}
+.tree-root {
+  stroke: color-mix(in srgb, var(--warm) 62%, var(--rule));
+  stroke-width: 1.4;
+  opacity: 0.5;
+}
+.tree-crown__limb {
+  stroke: color-mix(in srgb, var(--red) 46%, var(--rule));
+  stroke-width: 1.2;
+  opacity: 0.42;
+}
+.tree-crown__tip {
+  fill: var(--canvas);
+  stroke: color-mix(in srgb, var(--red) 52%, var(--rule));
+  stroke-width: 1;
+}
+.tree-branch {
+  stroke-width: 1.6;
+  opacity: 0.34;
+}
+.tree-branch.is-active {
+  opacity: 0.72;
+  stroke-width: 2.4;
+}
+.map-canvas--lane-focus .tree-branch:not(.is-active) {
+  opacity: 0.14;
+}
+.tree-orbit {
+  stroke: color-mix(in srgb, #e6b85b 60%, var(--rule));
+  stroke-width: 1.2;
+  stroke-dasharray: 5 9;
+  opacity: 0.5;
+}
+.tree-marker {
   position: absolute;
   display: flex;
   flex-direction: column;
-  width: 208px;
-  height: 140px;
-  padding: 12px;
-  text-align: start;
-  background: #f8f6f0;
-  border: 1px solid #cfcec5;
-  border-top: 2px solid var(--lane-color);
-  border-radius: 0;
-  color: var(--ink);
-  z-index: 2;
+  gap: 2px;
+  width: 320px;
+  translate: -50% 0;
+  text-align: center;
+  pointer-events: none;
 }
-.project-node--main {
-  background: #fffefa;
-}
-.project-node--major {
-  border-color: #baaaa1;
-  border-top: 3px solid var(--red);
-  box-shadow: 3px 3px 0 #dbd6ca;
-}
-.node-topline {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  color: var(--lane-color);
-  font: 9px/1.4 var(--font-mono);
+.tree-marker span {
+  font: 9px var(--font-mono);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-}
-.node-release {
-  color: #78796d;
-}
-.node-arrow {
-  font-size: 14px;
-  line-height: 12px;
-  color: #8d8b7f;
-}
-.node-content {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-height: 0;
-  gap: 10px;
-  padding-block: 8px;
-}
-.node-content img {
-  width: 38px;
-  height: 54px;
-  object-fit: cover;
-  flex-shrink: 0;
-  border-radius: 0;
-  outline: 1px solid #0000001a;
-}
-.node-content strong {
-  font-size: 13px;
-  letter-spacing: -0.025em;
-  line-height: 1.3;
-  text-wrap: pretty;
-}
-.node-symbol {
-  display: grid;
-  place-items: center;
-  width: 29px;
-  height: 38px;
-  color: var(--lane-color);
-  flex-shrink: 0;
-}
-.node-bottom {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 5px;
-  border-top: 1px solid #e8e5dc;
-  padding-top: 7px;
-  color: #77786d;
-  font: 8px/1.3 var(--font-mono);
-}
-.node-landmark {
   color: var(--red);
 }
-.project-node.is-related,
-.project-node.is-highlighted {
-  border-color: var(--lane-color);
-  background: #fffefa;
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--lane-color) 25%, transparent);
-  z-index: 3;
+.tree-marker strong {
+  font-size: 13px;
+  color: var(--text);
+}
+.tree-marker small {
+  font: 9px var(--font-mono);
+  color: var(--muted);
+}
+.tree-lane-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  max-width: 300px;
+  padding: 8px 10px;
+  border: 0;
+  border-inline-start: 3px solid var(--lane-color);
+  background: var(--canvas);
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+.tree-lane-label--left {
+  translate: -100% 0;
+  text-align: end;
+  border-inline: 0;
+  border-inline-end: 3px solid var(--lane-color);
+}
+.tree-lane-label--orbit {
+  background: color-mix(in srgb, #e6b85b 8%, var(--canvas));
+}
+.tree-lane-label em {
+  font: 8px/1.4 var(--font-mono);
+  font-style: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lane-color);
+}
+.tree-lane-label > span {
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.tree-lane-label small {
+  max-width: 32ch;
+  font: 9px/1.6 var(--font-mono);
+  color: var(--muted);
+}
+.tree-lane-label.is-active {
+  background: var(--surface-hover);
+}
+.map-canvas--focusing .tree-lane-label:not(.is-active) {
+  opacity: 0.45;
 }
 .lane-label {
   position: absolute;
@@ -1707,27 +2140,6 @@ input[type="checkbox"] {
 .lane-label small {
   font: 9px/1.8 var(--font-mono);
   color: #7c7d70;
-}
-.epoch-label {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #484b41;
-  white-space: nowrap;
-  pointer-events: none;
-}
-.epoch-label > span {
-  font: 10px var(--font-mono);
-  color: var(--red);
-  border: 1px solid #d1bdb0;
-  padding: 4px 6px;
-}
-.epoch-label > small {
-  font: 9px var(--font-mono);
-  color: #8a8b7d;
 }
 .map-tools {
   position: absolute;
@@ -2273,13 +2685,13 @@ input[type="checkbox"] {
   scrollbar-color: var(--line-strong) var(--canvas);
   background-color: var(--canvas);
   background-image:
-    linear-gradient(#f4434d0d 1px, transparent 1px),
-    linear-gradient(90deg, #f4434d0d 1px, transparent 1px),
-    radial-gradient(#f4eee817 0.7px, transparent 0.7px);
+    linear-gradient(#f5eee808 1px, transparent 1px),
+    linear-gradient(90deg, #f5eee808 1px, transparent 1px),
+    radial-gradient(#f5eee812 0.7px, transparent 0.7px);
   background-size:
-    72px 72px,
-    72px 72px,
-    20px 20px;
+    96px 96px,
+    96px 96px,
+    24px 24px;
 }
 .map-viewport::-webkit-scrollbar {
   width: 10px;
@@ -2296,27 +2708,7 @@ input[type="checkbox"] {
 .axis-year {
   fill: var(--text-dim);
 }
-.project-node {
-  background: var(--surface);
-  border-color: var(--rule);
-  border-radius: 0;
-  color: var(--text);
-  box-shadow: 0 10px 24px #00000038;
-}
-.project-node--main {
-  background: var(--surface-raised);
-}
-.project-node--major {
-  border-color: color-mix(in srgb, var(--warm) 72%, var(--rule));
-  border-top-color: var(--red);
-  box-shadow: 0 14px 28px #00000052;
-}
-.node-release,
-.node-arrow,
-.node-bottom,
 .lane-label small,
-.epoch-label,
-.epoch-label > small,
 .map-hint,
 .overview-label small,
 .overview-end,
@@ -2325,23 +2717,6 @@ input[type="checkbox"] {
 .connection-direction,
 .connection-meta code {
   color: var(--muted);
-}
-.node-bottom {
-  border-top-color: var(--rule);
-}
-.node-content img {
-  outline-color: #ffffff1a;
-}
-.project-node.is-related,
-.project-node.is-highlighted {
-  background: var(--surface-raised);
-  box-shadow: 0 14px 28px #00000052;
-}
-.epoch-label {
-  color: var(--text-dim);
-}
-.epoch-label > span {
-  border-color: color-mix(in srgb, var(--red) 62%, var(--rule));
 }
 .map-tools select,
 .zoom-controls {
@@ -2440,7 +2815,6 @@ input[type="checkbox"] {
 .details-top button,
 .spoiler-toggle,
 .reveal-project,
-.node-content img,
 .map-viewport::-webkit-scrollbar-thumb {
   border-radius: 0;
 }
@@ -2676,14 +3050,25 @@ input[type="checkbox"] {
   height: 680px;
   scrollbar-color: var(--line-strong) var(--canvas);
   background-color: var(--canvas);
+  /* Нейтральная сетка вместо красной: помогает масштабу, не спорит с картой. */
   background-image:
-    linear-gradient(#ed1d240d 1px, transparent 1px),
-    linear-gradient(90deg, #ed1d240d 1px, transparent 1px),
-    radial-gradient(#f5eee817 0.7px, transparent 0.7px);
+    linear-gradient(#f5eee808 1px, transparent 1px),
+    linear-gradient(90deg, #f5eee808 1px, transparent 1px),
+    radial-gradient(#f5eee812 0.7px, transparent 0.7px);
   background-size:
-    72px 72px,
-    72px 72px,
-    20px 20px;
+    96px 96px,
+    96px 96px,
+    24px 24px;
+}
+.map-viewport--tree {
+  background-image:
+    linear-gradient(#f5eee806 1px, transparent 1px),
+    linear-gradient(90deg, #f5eee806 1px, transparent 1px),
+    radial-gradient(#f5eee80f 0.7px, transparent 0.7px);
+  background-size:
+    96px 96px,
+    96px 96px,
+    24px 24px;
 }
 .map-viewport::-webkit-scrollbar {
   width: 10px;
@@ -2726,11 +3111,17 @@ input[type="checkbox"] {
   opacity: 0.45;
 }
 .connection-group {
-  opacity: 0.34;
+  opacity: 0.07;
   transition: opacity 150ms;
 }
-.connection-group--active {
+.connection-group.is-active {
   opacity: 1;
+}
+.map-canvas--links-all .connection-group {
+  opacity: 0.3;
+}
+.map-canvas--focusing .connection-group:not(.is-active) {
+  opacity: 0.05;
 }
 .connection {
   stroke-width: 1.1;
@@ -2766,49 +3157,6 @@ input[type="checkbox"] {
   fill: #d8c9ad;
   font-variant-numeric: tabular-nums;
 }
-.project-node {
-  overflow: visible;
-  border-color: var(--rule);
-  border-top-color: var(--lane-color);
-  border-radius: 0;
-  background: var(--surface);
-  box-shadow: none;
-}
-.project-node::before {
-  display: none;
-}
-.project-node::after {
-  display: none;
-}
-.project-node--main {
-  border-color: var(--rule);
-  background: var(--surface-raised);
-}
-.project-node--major {
-  border-color: color-mix(in srgb, var(--warm) 72%, var(--rule));
-  border-top-color: var(--red);
-  box-shadow: none;
-}
-.node-content img {
-  border-radius: 0;
-  outline-color: #ffffff1a;
-  filter: none;
-}
-.node-topline {
-  letter-spacing: 0.08em;
-}
-.node-bottom {
-  border-top-color: #3b2d1d;
-}
-.node-landmark {
-  color: var(--warm);
-}
-.project-node.is-related,
-.project-node.is-highlighted {
-  border-color: var(--lane-color);
-  background: var(--surface-raised);
-  box-shadow: none;
-}
 .lane-label {
   min-width: 0;
   border-inline-start: 3px solid var(--lane-color);
@@ -2836,15 +3184,6 @@ input[type="checkbox"] {
 .lane-label small {
   max-width: 32ch;
   color: var(--muted);
-}
-.epoch-label {
-  color: var(--text-dim);
-}
-.epoch-label > span {
-  border-color: color-mix(in srgb, var(--red) 62%, var(--rule));
-  border-radius: 0;
-  color: var(--red);
-  background: var(--surface);
 }
 .map-tools select,
 .zoom-controls {
@@ -3033,24 +3372,12 @@ input[type="checkbox"] {
   .chapters button:hover {
     color: var(--red);
   }
-  .project-node:hover,
   .list-grid button:hover {
     border-color: var(--lane-color);
-  }
-  .project-node:hover {
-    transform: translateY(-2px);
-  }
-  .list-grid button:hover {
     background: var(--surface-hover);
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .project-node {
-    transition:
-      border-color 150ms,
-      box-shadow 150ms,
-      transform 150ms;
-  }
   .connection {
     transition:
       opacity 150ms,
@@ -3175,9 +3502,6 @@ input[type="checkbox"] {
   }
   .map-viewport {
     height: 540px;
-  }
-  .epoch-label {
-    display: none;
   }
   .map-tools {
     inset-inline: 8px;
@@ -3346,7 +3670,7 @@ input[type="checkbox"] {
     gap: 8px;
   }
 }
-/* Ветки карты: размеры карточек по типу проекта и раскрытие ветки при наведении. */
+/* Ветки карты: раскрытие ветки при наведении и фокус на связи. */
 button.lane-label {
   margin: 0;
   border: 0;
@@ -3355,59 +3679,13 @@ button.lane-label {
   text-align: start;
   cursor: pointer;
   pointer-events: auto;
-}
-.lane-zone {
-  position: absolute;
-  z-index: 1;
-}
-.project-node--compact {
-  width: 184px;
-  height: 122px;
-  padding: 10px;
-}
-.project-node--compact .node-content img {
-  width: 32px;
-  height: 46px;
-}
-.project-node--compact .node-content strong {
-  font-size: 12px;
-}
-.project-node--compact .node-symbol {
-  font-size: 18px;
-}
-.project-node--wide {
-  width: 232px;
-  height: 158px;
-}
-.project-node--wide .node-content strong {
-  font-size: 14px;
-}
-.node-content strong {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  overflow: hidden;
-}
-.project-node--compact .node-content strong {
-  -webkit-line-clamp: 3;
-}
-.project-node.is-lane-expanded {
-  z-index: 5;
-  transform: translateY(-3px) scale(1.06);
-  border-color: var(--lane-color);
-  box-shadow: 0 16px 32px #00000080;
-}
-.map-canvas--lane-focus .project-node:not(.is-lane-expanded) {
-  opacity: 0.45;
-}
-.map-canvas--lane-focus .connection-group {
-  opacity: 0.1;
-}
-.map-canvas--lane-focus .connection-group--active {
-  opacity: 1;
+  z-index: 4;
 }
 .lane-label--expanded {
   background: var(--surface-hover);
+}
+.map-canvas--focusing .lane-label:not(.lane-label--expanded) {
+  opacity: 0.4;
 }
 .source-list {
   display: flex;
@@ -3433,17 +3711,145 @@ button.lane-label {
   font-style: italic;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .project-node {
-    transition:
-      transform 170ms,
-      opacity 170ms,
-      border-color 150ms,
-      box-shadow 150ms;
-  }
   .lane-label {
     transition:
       background-color 150ms,
       transform 150ms;
+  }
+}
+/* Семантический зум, медальоны и HUD второго поколения. */
+.map-tools {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+.map-tools__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  pointer-events: auto;
+}
+.tools-field {
+  display: flex;
+  min-width: 0;
+}
+.lane-label small {
+  display: none;
+}
+.lane-label--expanded small {
+  display: block;
+}
+.tools-button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: auto;
+  min-width: 40px;
+  padding-inline: 12px;
+  height: 40px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.view-toggle .material-symbols-outlined {
+  font-size: 18px;
+}
+.overview-row--tree {
+  align-items: flex-start;
+  gap: 20px;
+}
+.overview--tree {
+  flex: 0 0 auto;
+  width: 128px;
+  height: 296px;
+}
+.overview-orbit {
+  fill: none;
+  stroke: #e6b85b;
+  stroke-width: 2;
+  stroke-dasharray: 6 10;
+  opacity: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+.overview-node {
+  opacity: 0.85;
+}
+.overview-limb {
+  opacity: 0.55;
+}
+.map-viewport--tree {
+  background-color: var(--canvas);
+}
+@media (hover: hover) {
+  .tools-button:hover,
+  .tree-lane-label:hover {
+    background: var(--surface-hover);
+  }
+}
+@media (max-width: 1050px) {
+  .map-tools select {
+    max-width: 200px;
+  }
+}
+@media (max-width: 700px) {
+  .map-tools {
+    inset-inline: 8px;
+    top: 8px;
+  }
+  .map-tools__group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .tools-field {
+    flex: 1 1 auto;
+  }
+  .map-tools select {
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
+  }
+  .tools-button {
+    min-height: 44px;
+  }
+  .tree-lane-label {
+    max-width: 190px;
+  }
+  .tree-marker {
+    width: 240px;
+  }
+  .overview--tree {
+    width: 96px;
+    height: 232px;
+  }
+  .view-toggle button {
+    padding-inline: 9px;
+    font-size: 10px;
+  }
+  .view-toggle__label {
+    display: none;
+  }
+  .view-toggle button .material-symbols-outlined {
+    font-size: 20px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .connection-group,
+  .tree-branch,
+  .tree-lane-label,
+  .lane-zone {
+    transition: opacity 150ms;
   }
 }
 </style>

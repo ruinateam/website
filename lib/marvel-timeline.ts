@@ -32,7 +32,6 @@ export type Lane = {
   subtitle: string;
   universe: string;
   color: string;
-  y: number;
   kind: "main" | "story" | "alternate" | "outside-time";
   order: string;
 };
@@ -111,7 +110,6 @@ export const lanes: Lane[] = [
     subtitle: "Земля-616 · фильмы",
     universe: "Экранная Земля-616",
     color: "#ff5964",
-    y: 760,
     kind: "main",
     order: "Сюжетная хронология",
   },
@@ -121,7 +119,6 @@ export const lanes: Lane[] = [
     subtitle: "История основной реальности",
     universe: "Экранная Земля-616",
     color: "#d9ab4d",
-    y: 440,
     kind: "story",
     order: "Разные исторические эпохи",
   },
@@ -131,7 +128,6 @@ export const lanes: Lane[] = [
     subtitle: "Между приключениями Стражей",
     universe: "Экранная Земля-616",
     color: "#9acb72",
-    y: 440,
     kind: "story",
     order: "Порядок сезонов",
   },
@@ -141,7 +137,6 @@ export const lanes: Lane[] = [
     subtitle: "За пределами обычного времени",
     universe: "TVA и временные ветки",
     color: "#e6b85b",
-    y: 440,
     kind: "outside-time",
     order: "Порядок сезонов; не календарная шкала",
   },
@@ -151,7 +146,6 @@ export const lanes: Lane[] = [
     subtitle: "Питер Паркер / Тоби Магуайр",
     universe: "Вселенная трилогии Сэма Рэйми",
     color: "#ed8a61",
-    y: 440,
     kind: "alternate",
     order: "Порядок фильмов",
   },
@@ -161,7 +155,6 @@ export const lanes: Lane[] = [
     subtitle: "Питер Паркер / Эндрю Гарфилд",
     universe: "Вселенная дилогии Марка Уэбба",
     color: "#f0b26d",
-    y: 200,
     kind: "alternate",
     order: "Порядок фильмов",
   },
@@ -171,7 +164,6 @@ export const lanes: Lane[] = [
     subtitle: "Майлз Моралес / анимация",
     universe: "Анимационная мультивселенная Sony",
     color: "#e68caf",
-    y: 200,
     kind: "alternate",
     order: "Порядок фильмов; отдельный континуитет",
   },
@@ -181,7 +173,6 @@ export const lanes: Lane[] = [
     subtitle: "Сериалы и специальные выпуски",
     universe: "Экранная Земля-616",
     color: "#78d18d",
-    y: 1220,
     kind: "story",
     order: "Сюжетная последовательность по Marvel / Disney+",
   },
@@ -191,7 +182,6 @@ export const lanes: Lane[] = [
     subtitle: "Сорвиголова и другие герои",
     universe: "Экранная Земля-616",
     color: "#f09a7b",
-    y: 1390,
     kind: "story",
     order: "Сезоны сгруппированы; истории частично параллельны",
   },
@@ -201,7 +191,6 @@ export const lanes: Lane[] = [
     subtitle: "Альтернативные исходы",
     universe: "Множество альтернативных реальностей",
     color: "#c5a4ef",
-    y: 1430,
     kind: "alternate",
     order: "Порядок сезонов; не единая реальность",
   },
@@ -211,7 +200,6 @@ export const lanes: Lane[] = [
     subtitle: "Мультсериал 1990-х и «'97»",
     universe: "Анимационная линия мутантов",
     color: "#6fc3b8",
-    y: 1580,
     kind: "alternate",
     order: "Продолжение классического мультсериала; не континуитет фильмов Fox",
   },
@@ -221,7 +209,6 @@ export const lanes: Lane[] = [
     subtitle: "Оригинальная и изменённая ветки Fox",
     universe: "Континуитет Fox; несколько временных веток",
     color: "#d9b66a",
-    y: 1700,
     kind: "alternate",
     order: "Порядок выхода: из-за изменения прошлого единой хронологии нет",
   },
@@ -231,7 +218,6 @@ export const lanes: Lane[] = [
     subtitle: "Веном, Морбиус и другие",
     universe: "Экранные истории Sony; общая реальность не для всех установлена",
     color: "#b5bfd3",
-    y: 2010,
     kind: "alternate",
     order: "Порядок выхода; календарное положение не унифицировано",
   },
@@ -241,7 +227,6 @@ export const lanes: Lane[] = [
     subtitle: "Земля-828 → столкновение миров",
     universe: "Земля-828 / линия «Судного дня»",
     color: "#e9c875",
-    y: 1450,
     kind: "alternate",
     order: "«Первые шаги» напрямую ведут к «Судному дню»",
   },
@@ -251,7 +236,6 @@ export const lanes: Lane[] = [
     subtitle: "Другой путь Питера Паркера",
     universe: "Альтернативная анимационная реальность",
     color: "#f28b7b",
-    y: 200,
     kind: "alternate",
     order: "Отдельная версия истории Питера",
   },
@@ -2280,14 +2264,7 @@ export const connections: Connection[] = [
     "Том Хиддлстон указан в официальном составе «Судного дня»: Локи и TVA возвращаются в центр событий.",
   ),
 ];
-export const geometry = { step: 264, padding: 190, width: 10460, height: 2180, mainY: 760 };
-export function point(project: Project) {
-  return { x: geometry.padding + project.slot * geometry.step, y: laneById.get(project.lane)!.y };
-}
-export function connectionPath(connection: Connection) {
-  const from = point(projectById.get(connection.source)!);
-  const to = point(projectById.get(connection.target)!);
-  if (from.y === to.y) return `M ${from.x} ${from.y} H ${to.x}`;
-  const bend = from.x + (to.x - from.x) * 0.5;
-  return `M ${from.x} ${from.y} C ${bend} ${from.y}, ${bend} ${to.y}, ${to.x} ${to.y}`;
-}
+
+// Diagram coordinates now live in `marvel-timeline-layout.ts`, which derives two
+// independent layouts (horizontal timeline and vertical tree) from this data.
+
