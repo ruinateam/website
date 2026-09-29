@@ -44,6 +44,31 @@ export default defineNuxtConfig({
   compatibilityDate: "2026-01-28",
   modules: ["@nuxt/content"],
   css: ["~/assets/css/tokens.css", "~/assets/css/base.css", "~/assets/css/loading.css"],
+  vite: {
+    // Group browser requests only: SSR style chunks must keep Nuxt's own layout.
+    $client: {
+      build: {
+        rolldownOptions: {
+          output: {
+            codeSplitting: {
+              groups: [
+                {
+                  // Cache the Vue runtime independently from application updates.
+                  name: "framework",
+                  test: /[\\/]node_modules[\\/](?:vue|@vue|vue-router)[\\/]/,
+                  priority: 30,
+                },
+                {
+                  name: "index",
+                  tags: ["$initial"],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+  },
   app: {
     head: {
       title: "Ruina.team",
@@ -96,6 +121,10 @@ export default defineNuxtConfig({
         },
       },
     },
+  },
+  experimental: {
+    // The native watcher avoids slow recursive scans on Windows.
+    watcher: "parcel",
   },
   routeRules: {
     "/guides/**": { prerender: true },
