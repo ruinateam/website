@@ -19,6 +19,10 @@ const props = defineProps<{ hero?: boolean }>();
         <span class="nav-label nav-label--desktop">Руководства</span>
         <span class="nav-label nav-label--mobile">Руководства</span>
       </NuxtLink>
+      <NuxtLink to="/timelines">
+        <span class="nav-label nav-label--desktop">Таймлайны</span>
+        <span class="nav-label nav-label--mobile">Таймлайны</span>
+      </NuxtLink>
       <NuxtLink to="/chat-tiers">
         <span class="nav-label nav-label--desktop">Рейтинг чата</span>
         <span class="nav-label nav-label--mobile">Рейтинг</span>
