@@ -1,0 +1,5 @@
+# Статистика языков на GitHub: показываем только исходники интерфейса.
+# Разметка (markdown), стили, JSON, скрипты и ассеты в языковой полосе не участвуют.
+* linguist-detectable=false
+*.vue linguist-detectable=true
+*.ts linguist-detectable=true
