@@ -2267,4 +2267,3 @@ export const connections: Connection[] = [
 
 // Diagram coordinates now live in `marvel-timeline-layout.ts`, which derives two
 // independent layouts (horizontal timeline and vertical tree) from this data.
-

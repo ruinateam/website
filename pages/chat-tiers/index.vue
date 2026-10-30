@@ -173,7 +173,7 @@ const filteredEntries = computed(() => {
 });
 
 const displayedEntries = computed((): TierEntry[] =>
-  activeSearch.value.trim() ? filteredEntries.value : data.value?.entries ?? [],
+  activeSearch.value.trim() ? filteredEntries.value : (data.value?.entries ?? []),
 );
 
 const {
@@ -311,7 +311,10 @@ const alignToAvailable = (preferLatestMonth = false) => {
     const lastMonth = monthsForYear[monthsForYear.length - 1];
     if (!monthsForYear.length) {
       scope.value = "year";
-    } else if (lastMonth !== undefined && (yearWasAdjusted || !monthsForYear.includes(month.value))) {
+    } else if (
+      lastMonth !== undefined &&
+      (yearWasAdjusted || !monthsForYear.includes(month.value))
+    ) {
       month.value = lastMonth;
     }
   }
@@ -618,11 +621,7 @@ const errorText = computed(() => {
           >: online / offline / all
         </p>
       </div>
-      <button
-        class="btn primary refresh-btn"
-        :disabled="pending || !canReload"
-        @click="reload()"
-      >
+      <button class="btn primary refresh-btn" :disabled="pending || !canReload" @click="reload()">
         {{ pending ? "Загрузка..." : "Загрузить статистику" }}
       </button>
     </header>

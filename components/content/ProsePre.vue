@@ -105,5 +105,4 @@ const copyCode = async () => {
 .prose-pre-wrapper.has-filename pre {
   padding-top: 42px;
 }
-
 </style>

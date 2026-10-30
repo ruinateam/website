@@ -21,11 +21,11 @@ const props = defineProps<{
 defineEmits<{ posterError: [] }>();
 
 const disc = computed(() => medallionDisc(props.project, props.detail));
-const captionWidth = computed(
-  () => (props.detail === "full" ? medallionCaptionWidth.full : medallionCaptionWidth.compact),
+const captionWidth = computed(() =>
+  props.detail === "full" ? medallionCaptionWidth.full : medallionCaptionWidth.compact,
 );
-const captionHeight = computed(
-  () => (props.detail === "full" ? medallionCaptionHeight.full : medallionCaptionHeight.compact),
+const captionHeight = computed(() =>
+  props.detail === "full" ? medallionCaptionHeight.full : medallionCaptionHeight.compact,
 );
 const poster = computed(
   () => props.detail === "full" && !!props.project.poster && !props.posterFailed,

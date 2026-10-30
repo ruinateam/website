@@ -264,7 +264,8 @@ function laneLabelStyle(lane: Lane) {
     top: `${timelineLaneY(lane.id) + 16}px`,
     "--lane-color": lane.color,
   };
-}function treeLabelStyle(lane: Lane) {
+}
+function treeLabelStyle(lane: Lane) {
   const point = treeLaneLabelPoint(lane.id);
   return {
     left: `${point.x}px`,
@@ -388,10 +389,7 @@ function changeZoom(direction: number) {
   if (!element) return;
   const position = pendingZoomScroll ?? { x: element.scrollLeft, y: element.scrollTop };
   const viewportOffset = { x: element.clientWidth / 2, y: element.clientHeight / 2 };
-  const anchor = canvasFromScroll(
-    position.x + viewportOffset.x,
-    position.y + viewportOffset.y,
-  );
+  const anchor = canvasFromScroll(position.x + viewportOffset.x, position.y + viewportOffset.y);
   setZoom(
     direction > 0 ? zoom.value * zoomLimits.factor : zoom.value / zoomLimits.factor,
     anchor,
@@ -430,10 +428,7 @@ function zoomMap(event: WheelEvent) {
     y: Math.max(0, Math.min(element.clientHeight, event.clientY - box.top)),
   };
   const position = pendingZoomScroll ?? { x: element.scrollLeft, y: element.scrollTop };
-  const anchor = canvasFromScroll(
-    position.x + viewportOffset.x,
-    position.y + viewportOffset.y,
-  );
+  const anchor = canvasFromScroll(position.x + viewportOffset.x, position.y + viewportOffset.y);
   setZoom(
     event.deltaY < 0 ? zoom.value * zoomLimits.factor : zoom.value / zoomLimits.factor,
     anchor,
@@ -458,10 +453,7 @@ function goToRoots() {
     0,
     treeGeometry.trunkX * zoom.value + canvasPad.x - scroll.width / 2,
   );
-  cameraState.value.y = Math.max(
-    0,
-    treeGeometry.height * zoom.value + canvasPad.y - scroll.height,
-  );
+  cameraState.value.y = Math.max(0, treeGeometry.height * zoom.value + canvasPad.y - scroll.height);
   element.scrollTo({
     left: cameraState.value.x,
     top: cameraState.value.y,
@@ -481,9 +473,7 @@ async function goToProject(id: string) {
   await nextTick();
   activeLane.value = project.lane;
   if (view.value === "list") {
-    document
-      .getElementById(`list-${id}`)
-      ?.scrollIntoView({ block: "center", behavior: "instant" });
+    document.getElementById(`list-${id}`)?.scrollIntoView({ block: "center", behavior: "instant" });
     return;
   }
   moveTo(nodeCenter(project).x, nodeCenter(project).y);
@@ -521,9 +511,7 @@ const tabStopId = computed(() => focusId.value ?? filtered.value[0]?.id ?? null)
 function focusNode(project: Project, options: { move?: boolean } = {}) {
   focusId.value = project.id;
   nextTick(() => {
-    const element = viewport.value?.querySelector<HTMLElement>(
-      `[data-project="${project.id}"]`,
-    );
+    const element = viewport.value?.querySelector<HTMLElement>(`[data-project="${project.id}"]`);
     element?.focus({ preventScroll: true });
     if (options.move !== false) ensureVisible(nodeCenter(project));
   });
@@ -979,7 +967,10 @@ onBeforeUnmount(() => {
                   aria-hidden="true"
                 >
                   <template v-if="view === 'timeline'">
-                    <g v-if="shownLanes.some((lane) => lane.kind === 'main')" class="timeline-trunk">
+                    <g
+                      v-if="shownLanes.some((lane) => lane.kind === 'main')"
+                      class="timeline-trunk"
+                    >
                       <path
                         :d="timelineStrandPath(42, canvas.width - 58, timelineGeometry.mainY, 0, 0)"
                         class="timeline-trunk__halo"
@@ -1087,9 +1078,7 @@ onBeforeUnmount(() => {
                       />
                     </g>
                     <path
-                      v-if="
-                        detail !== 'overview' && shownLanes.some((lane) => lane.id === 'tva')
-                      "
+                      v-if="detail !== 'overview' && shownLanes.some((lane) => lane.id === 'tva')"
                       :d="treeOrbitPath()"
                       class="tree-orbit"
                     />

@@ -141,9 +141,7 @@ export function timelineX(slot: number): number {
 }
 
 export const timelineCanvas = {
-  width: round(
-    timelineX(maxSlot) + timelineGeometry.trailing + timelineGeometry.padding,
-  ),
+  width: round(timelineX(maxSlot) + timelineGeometry.trailing + timelineGeometry.padding),
   height: round(
     (timelineRows[timelineRows.length - 1]?.y ?? timelineGeometry.mainY) + timelineGeometry.bottom,
   ),
