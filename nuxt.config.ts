@@ -140,7 +140,7 @@ export default defineNuxtConfig({
       plugins: [
         {
           name: "windows-file-url-normalizer",
-          resolveId(id) {
+          resolveId(id: string) {
             if (process.platform !== "win32" || !id.startsWith("file:///")) {
               return null;
             }

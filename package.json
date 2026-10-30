@@ -21,24 +21,25 @@
     "test": "bun run lint && bun run validate:animations && bun run typecheck && bun run build"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.117.2",
-    "glob": "^13.0.6",
+    "@supabase/supabase-js": "2.118.0",
+    "glob": "14.0.3",
     "skinview3d": "3.4.2",
-    "skinview3d-blockbench": "1.0.19"
+    "skinview3d-blockbench": "1.0.20"
   },
   "devDependencies": {
-    "@nuxt/content": "3.16.1",
-    "@nuxt/kit": "4.5.2",
+    "@nuxt/content": "3.16.2",
+    "@nuxt/kit": "4.6.3",
     "@parcel/watcher": "2.6.0",
+    "@types/node": "26.6.6",
     "better-sqlite3": "^13.0.3",
-    "nuxt": "4.5.2",
-    "oxfmt": "0.71.0",
-    "oxlint": "1.86.0",
-    "rolldown": "1.2.11",
+    "nuxt": "4.6.3",
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0",
+    "rolldown": "1.2.16",
     "sirv-cli": "3.0.1",
     "typescript": "6.0.3",
-    "vite": "8.3.1",
-    "vue-tsc": "3.3.11"
+    "vite": "8.3.5",
+    "vue-tsc": "3.3.14"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.4"
 }
