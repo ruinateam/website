@@ -2,17 +2,41 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as motion from "../lib/team-motion";
 
-test("wheel progress clamps both ends without accumulating overscroll debt", () => {
-  assert.equal(typeof motion.wheelProgress, "function");
-  assert.equal(motion.wheelProgress(0, -5000, 0, 720, 3), 0);
-  assert.equal(motion.wheelProgress(2, 5000, 0, 720, 3), 2);
-  assert.equal(motion.wheelProgress(2, -180, 0, 720, 3), 1.75);
-  assert.equal(motion.wheelProgress(0, 180, 0, 720, 3), 0.25);
+const gesture = (): motion.WheelGesture => ({ distance: 0, lastAt: 0, stepped: false });
+
+test("one wheel notch advances exactly one member", () => {
+  const first = motion.wheelMember(0, 100, 3, gesture(), 1000);
+  assert.equal(first.member, 1);
+  assert.equal(motion.wheelMember(1, 100, 3, first.gesture, 1100).member, 1);
+  assert.equal(motion.wheelMember(1, 100, 3, first.gesture, 1600).member, 2);
 });
 
-test("line and page wheel modes preserve usable trackpad and wheel steps", () => {
-  assert.equal(motion.wheelProgress(0, 3, 1, 720, 3), 48 / 720);
-  assert.equal(motion.wheelProgress(0, 1, 2, 720, 3), 1);
+test("small trackpad deltas accumulate into a single step per gesture", () => {
+  let state = gesture();
+  let member = 0;
+  const members: number[] = [];
+  for (let index = 0; index < 5; index++) {
+    const result = motion.wheelMember(member, 5, 3, state, 1000 + index * 20);
+    state = result.gesture;
+    member = result.member;
+    members.push(member);
+  }
+  assert.deepEqual(members, [0, 0, 0, 0, 1]);
+  assert.equal(motion.wheelMember(1, 5, 3, state, 1080).member, 1);
+});
+
+test("a single gesture cannot skip participants even with a large delta", () => {
+  const first = motion.wheelMember(0, 2000, 3, gesture(), 1000);
+  assert.equal(first.member, 1);
+  assert.equal(motion.wheelMember(1, 2000, 3, first.gesture, 1050).member, 1);
+});
+
+test("wheel stepping reverses direction and clamps both ends", () => {
+  const forward = motion.wheelMember(1, 120, 3, gesture(), 1000);
+  assert.equal(forward.member, 2);
+  assert.equal(motion.wheelMember(2, -120, 3, forward.gesture, 1600).member, 1);
+  assert.equal(motion.wheelMember(2, 120, 3, gesture(), 1000).member, 2);
+  assert.equal(motion.wheelMember(0, -120, 3, gesture(), 1000).member, 0);
 });
 
 test("keyboard member navigation clamps movement and handles both endpoints", () => {

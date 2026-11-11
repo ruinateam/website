@@ -1,4 +1,10 @@
-import { dampProgress, keyboardMember, wheelProgress, settledMember } from "~/lib/team-motion";
+import {
+  dampProgress,
+  keyboardMember,
+  settledMember,
+  wheelMember,
+  type WheelGesture,
+} from "~/lib/team-motion";
 
 export interface TeamSceneHandle {
   setCinematicProgress: (progress: number | null, active: boolean) => void;
@@ -29,23 +35,8 @@ export function useTeamSequence(memberIds: readonly string[]) {
   let displayedProgress: number | null = null;
   let lastFrameTime = 0;
   let settleDuration = 520;
-  let settleTimer = 0;
-  let settleDelay = 180;
   let targetProgress = 0;
-  let completing = false;
-
-  function finishHandoff() {
-    window.clearTimeout(settleTimer);
-    if (disposed || !cinematic.value || !track.value || document.hidden) return;
-    targetProgress = settledMember(targetProgress, count);
-    completing = true;
-    scheduleUpdate();
-  }
-
-  function scheduleSettle() {
-    window.clearTimeout(settleTimer);
-    if (cinematic.value) settleTimer = window.setTimeout(finishHandoff, settleDelay);
-  }
+  let wheelGesture: WheelGesture = { distance: 0, lastAt: 0, stepped: false };
 
   function onScroll() {
     if (cinematic.value) return;
@@ -56,16 +47,13 @@ export function useTeamSequence(memberIds: readonly string[]) {
     if (!cinematic.value || event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY))
       return;
     event.preventDefault();
-    if (completing) targetProgress = displayedProgress ?? targetProgress;
-    completing = false;
-    targetProgress = wheelProgress(
-      targetProgress,
-      event.deltaY,
-      event.deltaMode,
-      scrollStep,
-      count,
-    );
-    scheduleSettle();
+    const pixels =
+      event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scrollStep : 1);
+    const base = settledMember(displayedProgress ?? targetProgress, count);
+    const result = wheelMember(base, pixels, count, wheelGesture, performance.now());
+    wheelGesture = result.gesture;
+    if (result.member === base) return;
+    targetProgress = result.member;
     scheduleUpdate();
   }
 
@@ -128,8 +116,7 @@ export function useTeamSequence(memberIds: readonly string[]) {
   function scrollToMember(index: number, behavior: ScrollBehavior = "smooth") {
     if (!track.value) return;
     if (cinematic.value) {
-      window.clearTimeout(settleTimer);
-      completing = true;
+      wheelGesture = { distance: 0, lastAt: 0, stepped: false };
       targetProgress = settledMember(index, count);
       if (behavior === "instant") displayedProgress = index;
       scheduleUpdate();
@@ -157,7 +144,7 @@ export function useTeamSequence(memberIds: readonly string[]) {
 
   function configure() {
     if (disposed || !stage.value || !track.value) return;
-    window.clearTimeout(settleTimer);
+    wheelGesture = { distance: 0, lastAt: 0, stepped: false };
     const nav = document.querySelector<HTMLElement>(".nav");
     stickyTop = nav
       ? nav.getBoundingClientRect().height + (parseFloat(getComputedStyle(nav).top) || 0) + 40
@@ -167,8 +154,6 @@ export function useTeamSequence(memberIds: readonly string[]) {
     const preservePosition = configured;
     settleDuration =
       parseFloat(getComputedStyle(stage.value).getPropertyValue("--duration-slow")) || 520;
-    settleDelay =
-      parseFloat(getComputedStyle(stage.value).getPropertyValue("--duration-fast")) || 180;
     cinematic.value = window.innerWidth >= 720 && stageHeight >= 400 && !motionQuery?.matches;
     scrollStep = Math.max(520, stageHeight * 0.95);
     stage.value.style.setProperty("--team-stage-top", `${stickyTop}px`);
@@ -213,7 +198,6 @@ export function useTeamSequence(memberIds: readonly string[]) {
   onBeforeUnmount(() => {
     disposed = true;
     cancelAnimationFrame(frame);
-    window.clearTimeout(settleTimer);
     motionQuery?.removeEventListener("change", configure);
     navObserver?.disconnect();
     window.removeEventListener("scroll", onScroll);

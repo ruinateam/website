@@ -46,17 +46,43 @@ export function keyboardMember({
   return settledMember(progress + direction, count);
 }
 
-/** WheelEvent deltaMode: pixels, lines (16px), or pages (one shot). */
-export function wheelProgress(
+export interface WheelGesture {
+  distance: number;
+  lastAt: number;
+  stepped: boolean;
+}
+
+/** A pause longer than this starts a new wheel or trackpad gesture. */
+export const WHEEL_GESTURE_IDLE_MS = 220;
+/** Small trackpad deltas accumulate until this distance within one gesture. */
+export const WHEEL_MIN_DISTANCE = 24;
+
+/**
+ * Advances at most one participant per gesture. A one-notch wheel event passes the
+ * threshold immediately; a slow trackpad gesture accumulates until it does, and the
+ * first frame is never discarded by settling between wheel events.
+ */
+export function wheelMember(
   current: number,
-  delta: number,
-  mode: number,
-  step: number,
+  deltaPixels: number,
   count: number,
-) {
-  const pixels = delta * (mode === 1 ? 16 : mode === 2 ? step : 1);
-  if (!Number.isFinite(pixels) || step <= 0) return current;
-  return Math.max(0, Math.min(count - 1, current + pixels / step));
+  gesture: WheelGesture,
+  now: number,
+): { member: number; gesture: WheelGesture } {
+  const settled = settledMember(current, count);
+  if (!Number.isFinite(deltaPixels) || deltaPixels === 0 || count <= 1)
+    return { member: settled, gesture: { ...gesture, lastAt: now } };
+
+  const fresh = now - gesture.lastAt > WHEEL_GESTURE_IDLE_MS;
+  const distance = (fresh ? 0 : gesture.distance) + deltaPixels;
+  const stepped = fresh ? false : gesture.stepped;
+  if (!stepped && Math.abs(distance) >= WHEEL_MIN_DISTANCE) {
+    return {
+      member: settledMember(settled + Math.sign(distance), count),
+      gesture: { distance: 0, lastAt: now, stepped: true },
+    };
+  }
+  return { member: settled, gesture: { distance, lastAt: now, stepped } };
 }
 
 /** Frame-rate-independent settling; duration is the existing theme's slow-motion token. */
