@@ -1,6 +1,8 @@
 # Team profile animations
 
-`profiles.animation.json` is a local Blockbench animation set for the team profiles.
+`profiles.animation.json` is the retained source animation set from the former profile viewer.
+The current `/team` gallery does not load it or depend on `skinview3d-blockbench`.
+Keep the source and its attribution together; the validator still checks its integrity.
 
 The `crouch` action is adapted from `idle_sneak.json` in [Serious Player Animations Template Resource Pack](https://github.com/McVader34/Serious-Player-Animations-Template-Resource-Pack/tree/e559b58b35d2a0caa77e7030f7d68d45ad1ab27f), released under CC0 1.0. It was converted to the `skinview3d-blockbench` bone names and keyframe format, and made non-looping for profile cards.
 

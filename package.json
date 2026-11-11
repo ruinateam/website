@@ -6,39 +6,40 @@
     "#internal/nuxt/paths": "./lib/nuxt-paths-proxy.mjs"
   },
   "scripts": {
-    "dev": "nuxt dev --host",
+    "dev": "bun ./node_modules/.bin/nuxt dev --host",
     "clean": "bun scripts/clean-output.ts",
-    "build": "bun run clean && nuxt generate",
-    "preview": "sirv dist/public -p 4173",
+    "build": "bun run clean && bun ./node_modules/.bin/nuxt generate",
+    "preview": "bun ./node_modules/.bin/sirv dist/public -p 4173",
     "preview:build": "bun run build && bun run preview",
     "fetch:data": "bun scripts/fetch-data.ts",
     "scan:roles": "bun scripts/scan-roles.ts",
     "validate:animations": "bun scripts/validate-animations.ts",
-    "lint": "oxlint --deny-warnings .",
-    "format": "oxfmt --write .",
-    "format:check": "oxfmt --check .",
-    "typecheck": "bun run clean && nuxt prepare && vue-tsc --noEmit --skipLibCheck",
-    "test": "bun run lint && bun run validate:animations && bun run typecheck && bun run build"
+    "lint": "bun ./node_modules/.bin/oxlint --deny-warnings .",
+    "format": "bun fmt",
+    "format:check": "bun fmt --check",
+    "typecheck": "bun run clean && bun ./node_modules/.bin/nuxt prepare && bun ./node_modules/.bin/vue-tsc --noEmit --skipLibCheck",
+    "test:unit": "bun test tests",
+    "test": "bun run test:unit && bun run lint && bun run validate:animations && bun run typecheck && bun run build"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.118.0",
-    "glob": "14.0.3",
+    "@supabase/supabase-js": "2.119.0",
+    "skinview-utils": "0.7.1",
     "skinview3d": "3.4.2",
-    "skinview3d-blockbench": "1.0.20"
+    "three": "0.156.1"
   },
   "devDependencies": {
     "@nuxt/content": "3.16.2",
-    "@nuxt/kit": "4.6.3",
+    "@nuxt/kit": "4.6.4",
     "@parcel/watcher": "2.6.0",
     "@types/node": "26.6.6",
+    "@types/three": "0.156.0",
     "better-sqlite3": "^13.0.3",
-    "nuxt": "4.6.3",
-    "oxfmt": "0.75.0",
-    "oxlint": "1.90.0",
-    "rolldown": "1.2.16",
+    "nuxt": "4.6.4",
+    "oxlint": "1.93.0",
+    "rolldown": "1.3.1",
     "sirv-cli": "3.0.1",
     "typescript": "6.0.3",
-    "vite": "8.3.5",
+    "vite": "8.3.7",
     "vue-tsc": "3.3.14"
   },
   "packageManager": "bun@1.4.4"

@@ -1,83 +1,42 @@
-import fs from "node:fs/promises";
-import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { rename, rm } from "node:fs/promises";
+import { join } from "node:path";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const outputDirectories = ["dist", ".output", ".cache/nuxt", ".nuxt"];
+const lockedFileCodes = new Set(["EBUSY", "EPERM", "EACCES"]);
 
-const rmDir = async (dir: string) => {
-  await fs.rm(dir, { recursive: true, force: true });
-};
+function fileErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return;
+  return typeof error.code === "string" ? error.code : undefined;
+}
 
-const exists = async (p: string) => {
+/** Rename first to release the build path; fall back to direct removal on Windows locks. */
+async function removeOutputDirectory(directory: string) {
+  const renamedDirectory = `${directory}__old_${randomUUID()}`;
+  let removalPath = renamedDirectory;
   try {
-    await fs.stat(p);
-    return true;
-  } catch {
-    return false;
+    await rename(directory, renamedDirectory);
+  } catch (error) {
+    const code = fileErrorCode(error);
+    if (code === "ENOENT") return;
+    if (!code || !lockedFileCodes.has(code)) throw error;
+    removalPath = directory;
   }
-};
 
-/**
- * Nuxt/Nitro writes static output to `dist/` (see `nuxt.config.ts`).
- * On Windows it's easy to get EBUSY/EPERM if Explorer/AV holds a handle.
- * This script makes `bun run build` more reliable by doing:
- * - best-effort rename to a unique temp dir
- * - best-effort delete with retries
- */
+  await rm(removalPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+}
+
 async function main() {
-  const root = process.cwd();
-  const outDir = path.join(root, "dist");
-  const legacyOutDir = path.join(root, ".output"); // older default; keep clean optional
-  const nuxtCacheDir = path.join(root, ".cache", "nuxt");
-  const legacyNuxtDir = path.join(root, ".nuxt");
-
-  const targets = [outDir, legacyOutDir, nuxtCacheDir, legacyNuxtDir];
-  const now = new Date();
-  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
-    now.getDate(),
-  ).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(
-    2,
-    "0",
-  )}${String(now.getSeconds()).padStart(2, "0")}`;
-
-  for (const dir of targets) {
-    if (!(await exists(dir))) continue;
-
-    // 1) Try rename first (often succeeds even if recursive delete fails).
-    const tmp = `${dir}__old_${stamp}`;
+  for (const directory of outputDirectories) {
     try {
-      await fs.rename(dir, tmp);
-      // Delete asynchronously with retries; ignore final failure.
-      for (let i = 0; i < 8; i++) {
-        try {
-          await rmDir(tmp);
-          break;
-        } catch (e: any) {
-          const code = String(e?.code || "");
-          if (code !== "EBUSY" && code !== "EPERM") break;
-          await sleep(150 * (i + 1));
-        }
-      }
-      continue;
-    } catch {
-      // fall through to rm retry
-    }
-
-    // 2) Fallback: retry rm directly.
-    for (let i = 0; i < 10; i++) {
-      try {
-        await rmDir(dir);
-        break;
-      } catch (e: any) {
-        const code = String(e?.code || "");
-        if (code !== "EBUSY" && code !== "EPERM") throw e;
-        await sleep(200 * (i + 1));
-      }
+      await removeOutputDirectory(join(process.cwd(), directory));
+    } catch (error) {
+      throw new Error(`Cannot clean build output "${directory}"`, { cause: error });
     }
   }
 }
 
-main().catch((err) => {
-  console.error("[clean] failed:", err);
-  // Don't hard-fail the pipeline; Nuxt will attempt its own cleanup too.
-  process.exitCode = 0;
+main().catch((error: unknown) => {
+  console.error("[clean] failed:", error);
+  process.exitCode = 1;
 });

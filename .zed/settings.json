@@ -28,7 +28,7 @@
       "formatter": {
         "external": {
           "command": "bun",
-          "arguments": ["x", "oxfmt", "--stdin-filepath", "{buffer_path}"]
+          "arguments": ["fmt", "--stdin-filepath", "{buffer_path}"]
         }
       }
     },
@@ -36,7 +36,7 @@
       "formatter": {
         "external": {
           "command": "bun",
-          "arguments": ["x", "oxfmt", "--stdin-filepath", "{buffer_path}"]
+          "arguments": ["fmt", "--stdin-filepath", "{buffer_path}"]
         }
       }
     },
@@ -44,7 +44,7 @@
       "formatter": {
         "external": {
           "command": "bun",
-          "arguments": ["x", "oxfmt", "--stdin-filepath", "{buffer_path}"]
+          "arguments": ["fmt", "--stdin-filepath", "{buffer_path}"]
         }
       }
     },
@@ -52,7 +52,7 @@
       "formatter": {
         "external": {
           "command": "bun",
-          "arguments": ["x", "oxfmt", "--stdin-filepath", "{buffer_path}"]
+          "arguments": ["fmt", "--stdin-filepath", "{buffer_path}"]
         }
       }
     }

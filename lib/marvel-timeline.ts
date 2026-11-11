@@ -1,10 +1,6 @@
 export type MediaType = "film" | "series" | "animation" | "special";
 export type Confidence =
-  | "confirmed"
-  | "strongly_supported"
-  | "disputed"
-  | "fan_reconstruction"
-  | "unknown";
+  "confirmed" | "strongly_supported" | "disputed" | "fan_reconstruction" | "unknown";
 export type Evidence = {
   sourceType: "primary" | "official";
   title: string;

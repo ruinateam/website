@@ -12,5 +12,12 @@ dist
 public/api-cache
 crash_report.txt
 .output_old_*
+dist__old_*/
+.output__old_*/
+.nuxt__old_*/
 .codegraph/
 .playwright-mcp/
+.hallmark/
+.env
+.env.*
+!.env.example

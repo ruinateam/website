@@ -23,6 +23,8 @@
   --color-bg3: #0d0d0dad;
   --color-surface: #0f0f12;
   --color-surface-soft: #17171a;
+  --color-team-stage: #090a0a;
+  --color-team-dock: rgba(12, 14, 14, 0.96);
   --color-text-1: #ffffff;
   --color-text-2: rgb(173, 176, 184);
   --color-border: rgba(255, 255, 255, 0.08);
