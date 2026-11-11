@@ -40,7 +40,17 @@
     "sirv-cli": "3.0.1",
     "typescript": "6.0.3",
     "vite": "8.3.7",
-    "vue-tsc": "3.3.14"
+    "vue-tsc": "3.3.14",
+    "zod": "4.6.7"
   },
-  "packageManager": "bun@1.4.4"
+  "overrides": {
+    "glob": "14.0.4",
+    "minimatch": "11.0.8",
+    "node-forge": "1.4.3",
+    "zod": "4.6.7"
+  },
+  "packageManager": "bun@1.4.4",
+  "patchedDependencies": {
+    "deepmerge@4.3.1": "patches/deepmerge@4.3.1.patch"
+  }
 }
