@@ -21,9 +21,10 @@ import { PlayerObject } from "skinview3d/libs/model.js";
 import { inferModelType, loadSkinToCanvas } from "skinview-utils";
 import { loadSkinImage, type SkinSource } from "./team-skin";
 import { galleryFrame, GALLERY_CENTERS, PLAYER_POSITIONS } from "./team-cinema";
+import { PLAYER_SCALE } from "./team-scale";
 import { loadPurpurMaterials } from "./team-purpur";
 import { createPurpurArchitecture } from "./team-architecture";
-import { applyGalleryPose } from "./team-player";
+import { applyGalleryPose, boundSkinAtlasUVs } from "./team-player";
 import { galleryCompileScene } from "./team-warmup";
 
 export async function createTeamGallery(
@@ -54,14 +55,14 @@ export async function createTeamGallery(
   timings.resources = performance.now() - started;
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.25;
+  renderer.toneMappingExposure = 1.02;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
   // Camera/light intensity changes do not change this static world's occluders.
   renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.needsUpdate = true;
   const scene = new Scene();
-  scene.fog = new FogExp2(0x11161a, 0.012);
+  scene.fog = new FogExp2(0x0b0f11, 0.017);
   const camera = new PerspectiveCamera(38, 1, 2, 240);
   const architecture = createPurpurArchitecture(surfaces);
   scene.add(architecture.root);
@@ -74,11 +75,11 @@ export async function createTeamGallery(
   const shadowBaked = [false, false, false];
   const lamps: SpotLight[] = [];
 
-  const ambient = new AmbientLight(0xc8d5df, 1.9);
-  const sun = new DirectionalLight(0xf0f1ed, 3.4);
+  const ambient = new AmbientLight(0xc8d5df, 1);
+  const sun = new DirectionalLight(0xf0f1ed, 2.5);
   sun.position.set(-24, 65, 36);
   scene.add(ambient, sun);
-  const fill = new DirectionalLight(0x8babbf, 1.3);
+  const fill = new DirectionalLight(0x8babbf, 1.5);
   fill.position.set(18, 25, -35);
   scene.add(fill);
 
@@ -86,22 +87,23 @@ export async function createTeamGallery(
     const player = new PlayerObject();
     const position = PLAYER_POSITIONS[index]!;
     player.position.set(...position);
+    player.scale.setScalar(PLAYER_SCALE);
     applyGalleryPose(player, index);
     player.visible = false;
     players.push(player);
     scene.add(player);
 
-    const lamp = new SpotLight(index === 1 ? 0xc6dce2 : 0xe2e6d7, 3.8, 110, Math.PI / 5, 0.75, 0);
-    lamp.position.set(center - 12, 56, 26);
-    lamp.target.position.set(position[0], 12, position[2]);
+    const lamp = new SpotLight(index === 1 ? 0xc6dce2 : 0xe2e6d7, 4, 110, Math.PI / 5, 0.75, 0);
+    lamp.position.set(center - 14, 30, 18);
+    lamp.target.position.set(position[0], position[1], position[2]);
     lamp.castShadow = true;
     lamp.shadow.autoUpdate = false;
     lamp.shadow.needsUpdate = true;
     lamp.shadow.mapSize.set(1024, 1024);
     lamp.shadow.camera.near = 8;
     lamp.shadow.camera.far = 110;
-    lamp.shadow.bias = -0.0003;
-    lamp.shadow.normalBias = 0.045;
+    lamp.shadow.bias = -0.0002;
+    lamp.shadow.normalBias = 0.03;
     scene.add(lamp, lamp.target);
     lamps.push(lamp);
 
@@ -111,7 +113,7 @@ export async function createTeamGallery(
     const ctx = glowCanvas.getContext("2d");
     if (ctx) {
       const glow = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-      glow.addColorStop(0, "rgba(136,177,181,0.3)");
+      glow.addColorStop(0, "rgba(136,177,181,0.18)");
       glow.addColorStop(1, "rgba(136,177,181,0)");
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, 64, 64);
@@ -121,8 +123,8 @@ export async function createTeamGallery(
         plane,
         new MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }),
       );
-      haze.position.set(center + 5, 29, -30);
-      haze.scale.set(88, 68, 1);
+      haze.position.set(center + 3, 18, -20);
+      haze.scale.set(56, 44, 1);
       scene.add(haze);
     }
   });
@@ -144,6 +146,8 @@ export async function createTeamGallery(
         if (!player) return;
         player.skin.map = texture;
         player.skin.modelType = inferModelType(normalized);
+        // Model inference rewrites arm UVs (classic/slim), so refresh their face bounds.
+        boundSkinAtlasUVs(player);
         loaded[index] = true;
         player.visible = true;
         renderer.shadowMap.needsUpdate = true;
@@ -158,8 +162,14 @@ export async function createTeamGallery(
   const look = new Vector3();
   let prepared = false;
   let sizeKey = "";
-  function setFrame(progress: number, compact: boolean, pointerX = 0, pointerY = 0) {
-    const shot = galleryFrame(progress, compact);
+  function setFrame(
+    progress: number,
+    compact: boolean,
+    pointerX = 0,
+    pointerY = 0,
+    compactHeight = 0,
+  ) {
+    const shot = galleryFrame(progress, compact, compactHeight);
     camera.position.set(...shot.camera);
     camera.position.x += pointerX * 0.7;
     camera.position.y += pointerY * 0.35;
@@ -175,7 +185,7 @@ export async function createTeamGallery(
         renderer.shadowMap.needsUpdate = true;
         shadowBaked[index] = true;
       }
-      lamp.intensity = (0.7 + member.light * 4) * (1 + pointerX * 0.04);
+      lamp.intensity = (0.4 + member.light * 4) * (1 + pointerX * 0.04);
     });
   }
 
@@ -239,7 +249,7 @@ export async function createTeamGallery(
       pointerX = 0,
       pointerY = 0,
     ) {
-      setFrame(progress, compact, pointerX, pointerY);
+      setFrame(progress, compact, pointerX, pointerY, height);
       camera.aspect = width / Math.max(1, height);
       camera.updateProjectionMatrix();
       renderer.setViewport(x, y, width, height);

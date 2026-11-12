@@ -1,7 +1,7 @@
 import { Group, Mesh } from "three";
 import type { BufferGeometry, Material } from "three";
 import { GALLERY_CENTERS } from "./team-cinema";
-import { GALLERY_FLOOR, purpurBox, purpurSlab, purpurStairs } from "./team-purpur";
+import { GALLERY_FLOOR, purpurBox, purpurSlab } from "./team-purpur";
 
 interface ArchitectureSurfaces {
   block: Material;
@@ -15,9 +15,7 @@ export function createPurpurArchitecture(surfaces: ArchitectureSurfaces) {
   const root = new Group();
   root.name = "Purpur gallery";
   const geometries = new Map<string, BufferGeometry>();
-  const stairGeometry = purpurStairs();
   geometries.set("slab", purpurSlab());
-  geometries.set("stairs", stairGeometry);
   const block = (
     parent: Group,
     x: number,
@@ -51,17 +49,6 @@ export function createPurpurArchitecture(surfaces: ArchitectureSurfaces) {
     block(group, 0, height + 1.5, 0, 9, 3, 9, surfaces.cap);
     parent.add(group);
   };
-  const stairs = (parent: Group, x: number, z: number, count: number) => {
-    for (let step = 0; step < count; step++) {
-      const mesh = new Mesh(stairGeometry, step % 2 ? surfaces.block : surfaces.cap);
-      mesh.name = `${parent.name}/stairs(${x},${z})/${step}`;
-      mesh.position.set(x + step * 6, 3 + step * 6, z);
-      mesh.castShadow = mesh.receiveShadow = true;
-      parent.add(mesh);
-      if (step > 0) block(parent, mesh.position.x, step * 3, z, 6, step * 6, 6, surfaces.shadow);
-    }
-  };
-
   GALLERY_CENTERS.forEach((center, index) => {
     const room = new Group();
     room.name = `room-${index}`;
@@ -73,45 +60,18 @@ export function createPurpurArchitecture(surfaces: ArchitectureSurfaces) {
       ...GALLERY_FLOOR.foundation.size,
       surfaces.shadow,
     );
-    block(room, ...GALLERY_FLOOR.surface.center, ...GALLERY_FLOOR.surface.size);
-    for (let n = 0; n < 8; n++)
-      block(
-        room,
-        -24 + n * 6,
-        -1.5,
-        18 + (n % 3 ? 0 : 3),
-        6,
-        3,
-        6,
-        n % 2 ? surfaces.shadow : surfaces.block,
-      );
+    block(room, ...GALLERY_FLOOR.surface.center, ...GALLERY_FLOOR.surface.size, surfaces.shadow);
     if (index === 0) {
-      pillar(room, -28, -14, 36);
-      pillar(room, 28, -18, 42);
-      pillar(room, -17, -18, 27, -0.32);
-      block(room, -14.5, 3, -15, 15, 6, 6);
-      stairs(room, 15, -8, 3);
-      const lintel = block(room, -21, 10.5, -12, 6, 18, 6, surfaces.column);
-      lintel.rotation.z = -Math.PI / 2 - 0.16;
+      pillar(room, -18, -12, 6);
+      pillar(room, 18, -13, 24);
     } else if (index === 1) {
-      pillar(room, -27, -18, 42);
-      pillar(room, 22, -18, 30, 0.17);
-      const brokenArch = block(room, -12, 47.25, -18, 36, 6, 9, surfaces.cap);
-      brokenArch.rotation.z = -0.08;
-      block(room, 15, 29, -27, 12, 3, 9, surfaces.cap);
-      stairs(room, 18, -12, 3);
-      block(room, 22, 3, 18, 12, 6, 9);
+      pillar(room, -18, -13, 27);
+      pillar(room, 18, -11, 6);
     } else {
-      pillar(room, -27, -20, 36, -0.19);
-      pillar(room, 29, -24, 48);
-      stairs(room, 12, -16, 4);
-      block(room, -4, 1.5, 1, 18, 3, 18, surfaces.cap);
-      const fallen = block(room, -20, 5, -10, 6, 18, 6, surfaces.column);
-      fallen.rotation.z = -Math.PI / 2 - 0.25;
+      pillar(room, -17, -14, 18);
+      pillar(room, 18, -12, 6);
+      block(room, -3, 1.5, 1, 12, 3, 12, surfaces.shadow);
     }
-    // Near-plane piers only sit on handoff boundaries, not on settled portrait sightlines.
-    if (index < 2) pillar(room, 34, 23, index === 0 ? 33 : 24);
-    block(room, -32, 1.5, 34, 12, 3, 12, surfaces.shadow);
   });
   return { root, geometries: new Set(geometries.values()) };
 }

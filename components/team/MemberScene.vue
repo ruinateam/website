@@ -66,22 +66,24 @@ defineExpose({ setCinematicProgress, updateNativeScene });
     <div class="member-scene__fallback" aria-hidden="true"></div>
     <div class="member-scene__matte" aria-hidden="true"></div>
     <div class="member-scene__inner">
-      <div ref="identity" class="member-scene__identity">
-        <h2 :id="`${name.toLowerCase()}-name`">{{ name }}</h2>
-      </div>
-      <div ref="contact" class="member-scene__contact">
-        <ul :aria-label="`Социальные сети ${name}`">
-          <li v-for="social in socials" :key="social.name">
-            <a
-              :href="social.href"
-              target="_blank"
-              rel="noopener noreferrer"
-              :aria-label="`${social.name}: ${name}`"
-            >
-              <SocialIcon :name="social.icon" /><span>{{ social.name }}</span>
-            </a>
-          </li>
-        </ul>
+      <div class="member-scene__copy">
+        <div ref="identity" class="member-scene__identity">
+          <h2 :id="`${name.toLowerCase()}-name`">{{ name }}</h2>
+        </div>
+        <div ref="contact" class="member-scene__contact">
+          <ul :aria-label="`Социальные сети ${name}`">
+            <li v-for="social in socials" :key="social.name">
+              <a
+                :href="social.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                :aria-label="`${social.name}: ${name}`"
+              >
+                <SocialIcon :name="social.icon" /><span>{{ social.name }}</span>
+              </a>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
@@ -109,37 +111,48 @@ defineExpose({ setCinematicProgress, updateNativeScene });
   height: 100%;
   container-type: size;
 }
-.member-scene__identity {
+.member-scene__copy {
   position: absolute;
   z-index: 4;
-  top: 16%;
+  top: 18%;
   left: 0;
-  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(16px, 3vh, 30px);
+  max-width: min(62%, 760px);
+  pointer-events: none;
+}
+.member-scene__identity {
+  position: relative;
+  z-index: 4;
+  width: 100%;
   pointer-events: none;
 }
 .member-scene h2 {
   margin: 0 0 0 -0.055em;
   font-family: var(--font-base);
-  font-size: min(clamp(6rem, 14.5vw, 13rem), 28cqh);
+  font-size: min(clamp(5rem, 12vw, 10.5rem), 24cqh);
   font-weight: 800;
-  letter-spacing: -0.075em;
-  line-height: 1.1;
-  padding: 0 0.12em 0.12em 0;
+  letter-spacing: -0.065em;
+  line-height: 0.96;
+  color: #f4f6f6;
+  padding: 0 0.12em 0.08em 0;
 }
 .member-scene.member-scene--cinematic h2 {
-  font-size: min(clamp(6rem, 14.5vw, 13rem), 28cqh);
+  font-size: min(clamp(5rem, 12vw, 10.5rem), 24cqh);
 }
 .member-scene__contact {
-  position: absolute;
+  position: relative;
   z-index: 4;
-  top: 64%;
-  left: 0;
-  width: 42%;
+  width: 100%;
+  max-width: 100%;
   pointer-events: auto;
 }
 .member-scene__contact ul {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0 24px;
   margin: 0;
   padding: 0;
@@ -150,13 +163,15 @@ defineExpose({ setCinematicProgress, updateNativeScene });
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  color: var(--color-text-1);
+  color: rgba(244, 246, 246, 0.9);
   font-size: 0.875rem;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.75);
+  white-space: nowrap;
 }
 .member-scene__contact svg {
   width: 16px;
   height: 16px;
-  color: var(--color-text-2);
+  color: rgba(198, 207, 210, 0.82);
 }
 .member-scene a:focus-visible {
   outline: 2px solid var(--color-text-1);
@@ -165,24 +180,25 @@ defineExpose({ setCinematicProgress, updateNativeScene });
 .member-scene a:active {
   opacity: 0.7;
 }
-.member-scene--reverse .member-scene__identity {
-  top: 24%;
-  text-align: right;
-}
-.member-scene--reverse .member-scene__contact {
+.member-scene--reverse .member-scene__copy {
+  top: 22%;
   left: auto;
   right: 0;
-  width: 38%;
-}
-.member-scene--closing .member-scene__identity {
-  top: 48%;
+  align-items: flex-end;
   text-align: right;
 }
-.member-scene--closing .member-scene__contact {
-  top: 86%;
+.member-scene--reverse .member-scene__contact ul {
+  justify-content: center;
+}
+.member-scene--closing .member-scene__copy {
+  top: 40%;
   left: auto;
   right: 0;
-  width: auto;
+  align-items: flex-end;
+  text-align: right;
+}
+.member-scene--closing .member-scene__contact ul {
+  justify-content: center;
 }
 .member-scene__fallback {
   position: absolute;
@@ -192,9 +208,24 @@ defineExpose({ setCinematicProgress, updateNativeScene });
   pointer-events: none;
 }
 
+/* Native-mode viewports are separate scissor rectangles; fade their cut edges. */
 .member-scene__matte {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(
+    180deg,
+    var(--color-team-stage),
+    transparent 9%,
+    transparent 91%,
+    var(--color-team-stage)
+  );
+  pointer-events: none;
+}
+.member-scene--cinematic .member-scene__matte {
   display: none;
 }
+
 :global(.team-stage:has(.gallery-stage[data-status="ready"]) .member-scene__fallback) {
   display: none;
 }
@@ -208,58 +239,71 @@ defineExpose({ setCinematicProgress, updateNativeScene });
   .member-scene__inner {
     width: calc(100% - 64px);
   }
-  .member-scene__contact {
-    width: 40%;
-  }
 }
-@media (max-width: 600px) {
+/* Native mobile: one full-viewport composition per member, no stacked section bands. */
+@media (max-width: 719px) {
+  .member-scene {
+    scroll-margin-top: 0;
+  }
   .member-scene__inner {
-    width: calc(100% - 40px);
-    height: 600px;
+    width: 100%;
+    height: 100svh;
+    min-height: 560px;
+  }
+  .member-scene__copy {
+    display: contents;
   }
   .member-scene__identity,
+  .member-scene--reverse .member-scene__identity,
+  .member-scene--closing .member-scene__identity {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 82px);
+    left: max(20px, env(safe-area-inset-left));
+    right: max(20px, env(safe-area-inset-right));
+    width: auto;
+    text-align: left;
+  }
   .member-scene--reverse .member-scene__identity {
-    top: 48px;
+    text-align: right;
+  }
+  .member-scene--closing .member-scene__identity {
+    text-align: center;
   }
   .member-scene h2 {
-    font-size: clamp(4rem, 19vw, 7rem);
+    font-size: clamp(3.6rem, 16vw, 6rem);
+    line-height: 1;
+    padding-bottom: 0.16em;
   }
   .member-scene__contact,
   .member-scene--reverse .member-scene__contact,
   .member-scene--closing .member-scene__contact {
-    top: 464px;
+    position: absolute;
+    top: calc(100svh - clamp(152px, 24svh, 210px));
     left: 0;
-    right: auto;
+    right: 0;
     width: 100%;
+    max-width: 100%;
+    padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
   }
   .member-scene__contact ul {
-    gap: 0 12px;
+    gap: 0 6px;
+    justify-content: center;
   }
   .member-scene__contact a {
+    gap: 6px;
     font-size: 0.8125rem;
   }
-  .member-scene--closing .member-scene__identity {
-    top: 368px;
+  .member-scene__contact svg {
+    width: 15px;
+    height: 15px;
   }
   .member-scene__matte {
-    display: block;
-    position: absolute;
-    z-index: 3;
-    top: 128px;
-    left: 0;
-    width: 100%;
-    height: 340px;
-    background: linear-gradient(
-      var(--color-team-stage),
-      transparent 10%,
-      transparent 88%,
-      var(--color-team-stage)
-    );
-    pointer-events: none;
+    display: none;
   }
-  .member-scene--reverse .member-scene__contact ul,
-  .member-scene--closing .member-scene__contact ul {
-    justify-content: flex-end;
+}
+@media (max-width: 359px) {
+  .member-scene__contact ul {
+    gap: 0 4px;
   }
 }
 </style>

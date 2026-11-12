@@ -9,12 +9,11 @@ import {
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { loadImage } from "skinview-utils";
-
-export const PURPUR_UNIT = 6;
+import { BLOCK_UNIT } from "./team-scale";
 
 export const GALLERY_FLOOR = {
-  foundation: { center: [0, -4.5, -3], size: [60, 6, 42] },
-  surface: { center: [0, -1.5, -3], size: [54, 3, 36] },
+  foundation: { center: [0, -4.5, -3], size: [48, 6, 36] },
+  surface: { center: [0, -1.5, -3], size: [42, 3, 30] },
 } as const;
 
 /** Preserve the original 16px pattern, alpha and luminance; remove hue only. */
@@ -40,7 +39,7 @@ export function purpurBox(width: number, height: number, depth: number) {
   ];
   faceSizes.forEach(([w, h], face) => {
     for (let vertex = face * 4; vertex < face * 4 + 4; vertex++) {
-      uv.setXY(vertex, (uv.getX(vertex) * w!) / PURPUR_UNIT, (uv.getY(vertex) * h!) / PURPUR_UNIT);
+      uv.setXY(vertex, (uv.getX(vertex) * w!) / BLOCK_UNIT, (uv.getY(vertex) * h!) / BLOCK_UNIT);
     }
   });
   // Two contiguous groups: four pillar sides, then the two authentic end-grain faces.
@@ -127,13 +126,13 @@ export async function loadPurpurMaterials() {
   }
   const block = new MeshStandardMaterial({
     map: textures[0],
-    color: 0xa2a7ab,
-    roughness: 0.88,
-    metalness: 0.025,
+    color: 0x7d848a,
+    roughness: 0.9,
+    metalness: 0.02,
   });
-  const cap = new MeshStandardMaterial({ map: textures[0], color: 0xc0c4c7, roughness: 0.84 });
-  const shadow = new MeshStandardMaterial({ map: textures[0], color: 0x697278, roughness: 0.95 });
-  const pillar = new MeshStandardMaterial({ map: textures[1], color: 0xa9aeb2, roughness: 0.86 });
-  const end = new MeshStandardMaterial({ map: textures[2], color: 0xa9aeb2, roughness: 0.86 });
+  const cap = new MeshStandardMaterial({ map: textures[0], color: 0x7f868b, roughness: 0.88 });
+  const shadow = new MeshStandardMaterial({ map: textures[0], color: 0x4e5559, roughness: 0.96 });
+  const pillar = new MeshStandardMaterial({ map: textures[1], color: 0x81888d, roughness: 0.88 });
+  const end = new MeshStandardMaterial({ map: textures[2], color: 0x878e93, roughness: 0.88 });
   return { block, cap, shadow, column: [pillar, end], textures };
 }

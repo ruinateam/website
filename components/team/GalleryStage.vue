@@ -119,8 +119,10 @@ function renderFrame(progress: number | null, active: number, elapsed: number) {
       const rect = profile.getBoundingClientRect();
       if (rect.bottom < 0 || rect.top > window.innerHeight) return;
       const compact = width < 720;
-      const viewHeight = compact ? 340 : rect.height;
-      const viewTop = rect.top - root.top + (compact ? 128 : 0);
+      // Native mobile sections are full-viewport compositions: let the scene reach the
+      // section edges instead of leaving a flat band behind the member name.
+      const viewHeight = rect.height;
+      const viewTop = rect.top - root.top;
       gallery?.render(index, compact, 0, height - viewTop - viewHeight, width, viewHeight);
     });
   }

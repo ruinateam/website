@@ -45,6 +45,24 @@ export default defineNuxtConfig({
   modules: ["@nuxt/content"],
   css: ["~/assets/css/tokens.css", "~/assets/css/base.css", "~/assets/css/loading.css"],
   vite: {
+    // These are first reached through the lazy team scene. Discovering them mid-session
+    // makes Vite re-optimize and answer "Outdated Optimize Dep" (504), dropping HMR updates.
+    optimizeDeps: {
+      include: [
+        "@supabase/supabase-js",
+        "@vue/devtools-core",
+        "skinview-utils",
+        "skinview3d/libs/model.js",
+        "three",
+        "three/examples/jsm/utils/BufferGeometryUtils.js",
+      ],
+    },
+    server: {
+      watch: {
+        // Production snapshots are written inside the repo while dev/preview can run.
+        ignored: ["**/dist/**", "**/.output/**"],
+      },
+    },
     // Group browser requests only: SSR style chunks must keep Nuxt's own layout.
     $client: {
       build: {
@@ -128,6 +146,12 @@ export default defineNuxtConfig({
   },
   routeRules: {
     "/guides/**": { prerender: true },
+  },
+  $development: {
+    nitro: {
+      // Nitro cleans its output on startup. Never erase the production preview.
+      output: { dir: ".nuxt/nitro-dev" },
+    },
   },
   nitro: {
     preset: "github-pages",

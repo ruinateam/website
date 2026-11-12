@@ -25,7 +25,7 @@ const members = [
       { name: "NameMC", href: "https://namemc.com/profile/Digidro.2", icon: "namemc" },
       { name: "Twitch", href: "https://www.twitch.tv/digidro_", icon: "twitch" },
       { name: "GitHub", href: "https://github.com/Digidr0", icon: "github" },
-      { name: "Telegram", href: "https://t.me/digidro", icon: "telegram" },
+      { name: "Telegram", href: "https://t.me/digidr0", icon: "telegram" },
     ],
   },
   {
@@ -96,7 +96,8 @@ useHead({
 
 <template>
   <main class="team-page" aria-label="Команда">
-    <nav class="team-index" aria-label="Участники команды">
+    <nav class="team-index" aria-label="Участники команды" :style="{ '--active': activeMember }">
+      <span class="team-index__indicator" aria-hidden="true"></span>
       <a
         v-for="(member, index) in members"
         :key="member.name"
@@ -174,6 +175,26 @@ body:has(.team-track.is-cinematic) {
   min-height: 0;
 }
 
+@media (max-width: 719px) {
+  /* The mobile gallery owns the viewport; keep the compact navigation over it. */
+  .site.is-team .nav {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
+    margin: 0;
+    border-color: rgba(255, 255, 255, 0.07);
+    background: linear-gradient(180deg, rgba(10, 13, 14, 0.88), rgba(10, 13, 14, 0.64));
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  }
+
+  /* Native mobile scroll keeps one member composition per viewport. */
+  html:has(.team-track:not(.is-cinematic)) {
+    scroll-padding-top: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html:has(.is-team) {
     scroll-behavior: auto;
@@ -189,6 +210,16 @@ body:has(.team-track.is-cinematic) {
   background: var(--color-team-stage);
   padding-top: 40px;
   padding-bottom: 104px;
+}
+
+.team-page::after {
+  content: "";
+  position: fixed;
+  z-index: 14;
+  inset: auto 0 0;
+  height: clamp(96px, 14vh, 144px);
+  background: linear-gradient(rgba(7, 9, 10, 0), rgba(7, 9, 10, 0.94));
+  pointer-events: none;
 }
 
 .team-track {
@@ -234,36 +265,64 @@ body:has(.team-track.is-cinematic) {
 }
 
 .team-index {
+  --dock-pad: 4px;
   position: fixed;
   z-index: 15;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  width: max-content;
-  max-width: calc(100% - 32px);
-  padding: 4px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
-  background: var(--color-team-dock);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(320px, calc(100% - 32px));
+  padding: var(--dock-pad);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  background: rgba(10, 12, 12, 0.82);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.team-index__indicator {
+  position: absolute;
+  z-index: 0;
+  top: var(--dock-pad);
+  bottom: var(--dock-pad);
+  left: var(--dock-pad);
+  width: calc((100% - (var(--dock-pad) * 2)) / 3);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+  transform: translate3d(calc(var(--active) * 100%), 0, 0);
+  transition: transform 420ms var(--ease-emphasis);
 }
 
 .team-index a {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
+  min-width: 0;
   min-height: 44px;
-  padding: 8px 20px;
-  color: var(--color-text-2);
+  padding: 8px 10px;
+  border-radius: 12px;
+  color: rgba(236, 239, 240, 0.58);
   font-size: 0.875rem;
+  font-weight: 700;
   text-decoration: none;
-  transition:
-    color var(--duration-fast) var(--ease-smooth),
-    background-color var(--duration-fast) var(--ease-smooth);
+  transition: color var(--duration-fast) var(--ease-smooth);
 }
 
 .team-index a[aria-current] {
-  background: var(--color-surface-soft);
   color: var(--color-text-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .team-index a:hover {
+    color: var(--color-text-1);
+  }
 }
 
 .team-page a:hover {
@@ -279,13 +338,33 @@ body:has(.team-track.is-cinematic) {
   background: var(--color-surface);
 }
 
-@media (max-width: 700px) {
+.team-index a:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-index__indicator {
+    transition: none;
+  }
+}
+
+@media (max-width: 719px) {
+  .team-page {
+    padding: 0;
+  }
+
   .team-index {
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: min(300px, calc(100% - 32px));
   }
 
   .team-index a {
-    padding-inline: 12px;
+    padding-inline: 8px;
+    font-size: 0.8125rem;
+  }
+
+  .team-page::after {
+    height: clamp(92px, 17svh, 150px);
   }
 }
 </style>
